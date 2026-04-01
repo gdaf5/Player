@@ -20,7 +20,7 @@ from PyQt6.QtCore import (
     Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread,
 )
 from PyQt6.QtGui import (
-    QFont, QColor, QPixmap, QPainter, QMovie,
+    QFont, QColor, QPixmap, QPainter, QMovie, QImage,
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from mutagen.easyid3 import EasyID3
@@ -29,6 +29,7 @@ from mutagen.mp4 import MP4
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
+from mutagen.id3 import ID3
 
 
 THEMES = {
@@ -507,6 +508,7 @@ def get_track_info(filepath):
         "artist": "Unknown Artist",
         "album": "Unknown Album",
         "duration": 0,
+        "cover_path": None,
     }
     ext = Path(filepath).suffix.lower()
     try:
@@ -523,6 +525,18 @@ def get_track_info(filepath):
                 info["duration"] = int(audio.info.length * 1000)
             except:
                 pass
+            try:
+                tags = ID3(filepath)
+                for tag in tags.values():
+                    if tag.frameid == "APIC":
+                        cover_data = tag.data
+                        cover_path = filepath + ".cover.jpg"
+                        with open(cover_path, "wb") as f:
+                            f.write(cover_data)
+                        info["cover_path"] = cover_path
+                        break
+            except:
+                pass
         elif ext in (".m4a", ".mp4"):
             audio = MP4(filepath)
             tags = audio.tags
@@ -530,6 +544,12 @@ def get_track_info(filepath):
                 info["title"] = tags.get("\xa9nam", [Path(filepath).stem])[0]
                 info["artist"] = tags.get("\xa9ART", ["Unknown Artist"])[0]
                 info["album"] = tags.get("\xa9alb", ["Unknown Album"])[0]
+                if "covr" in tags:
+                    cover_data = tags["covr"][0]
+                    cover_path = filepath + ".cover.jpg"
+                    with open(cover_path, "wb") as f:
+                        f.write(cover_data)
+                    info["cover_path"] = cover_path
             info["duration"] = int(audio.info.length * 1000)
         elif ext == ".flac":
             audio = FLAC(filepath)
@@ -537,6 +557,12 @@ def get_track_info(filepath):
             info["artist"] = audio.get("artist", ["Unknown Artist"])[0]
             info["album"] = audio.get("album", ["Unknown Album"])[0]
             info["duration"] = int(audio.info.length * 1000)
+            if audio.pictures:
+                cover_data = audio.pictures[0].data
+                cover_path = filepath + ".cover.jpg"
+                with open(cover_path, "wb") as f:
+                    f.write(cover_data)
+                info["cover_path"] = cover_path
         elif ext == ".ogg":
             audio = OggVorbis(filepath)
             info["title"] = audio.get("title", [Path(filepath).stem])[0]
@@ -552,6 +578,15 @@ def get_track_info(filepath):
     except Exception:
         pass
     return info
+
+
+def get_cover_pixmap(track, size=200):
+    cover_path = track.get("cover_path")
+    if cover_path and os.path.exists(cover_path):
+        pm = QPixmap(cover_path)
+        if not pm.isNull():
+            return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    return None
 
 
 class TrackListItem(QListWidgetItem):
@@ -683,12 +718,7 @@ class DownloadWorker(QThread):
             os.makedirs(self.save_dir, exist_ok=True)
             ydl_opts = {
                 "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
-                "format": "bestaudio/best",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }],
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
                 "quiet": True,
                 "no_warnings": True,
                 "progress_hooks": [self._progress_hook],
@@ -1040,8 +1070,27 @@ class MusicPlayer(QMainWindow):
         player_bar_layout.setContentsMargins(20, 10, 20, 10)
         player_bar_layout.setSpacing(20)
 
+        cover_layout = QVBoxLayout()
+        cover_layout.setSpacing(0)
+        cover_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.cover_label = QLabel()
+        self.cover_label.setFixedSize(70, 70)
+        self.cover_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {self.theme['bg_tertiary']};
+                border-radius: 8px;
+            }}
+        """)
+        self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cover_layout.addWidget(self.cover_label)
+
+        player_bar_layout.addLayout(cover_layout)
+        player_bar_layout.setStretch(0, 0)
+
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
+        info_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.now_title = QLabel("No track selected")
         self.now_title.setObjectName("title_label")
@@ -1054,7 +1103,7 @@ class MusicPlayer(QMainWindow):
         info_layout.addWidget(self.now_artist)
 
         player_bar_layout.addLayout(info_layout)
-        player_bar_layout.setStretch(0, 0)
+        player_bar_layout.setStretch(1, 0)
 
         controls_layout = QVBoxLayout()
         controls_layout.setSpacing(5)
@@ -1153,6 +1202,15 @@ class MusicPlayer(QMainWindow):
         self.time_total.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px; text-align: right;")
         self.track_count_label.setStyleSheet(f"color: {self.theme['text_muted']}; font-size: 11px; padding: 0 15px 10px;")
         self.current_view_title.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {self.theme['text_primary']};")
+
+        t = self.theme
+        if not self.cover_label.pixmap() or self.cover_label.pixmap().isNull():
+            self.cover_label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {t['bg_tertiary']};
+                    border-radius: 8px;
+                }}
+            """)
 
     # ==================== ONLINE SEARCH ====================
 
@@ -1339,6 +1397,19 @@ class MusicPlayer(QMainWindow):
     def update_now_playing(self, track):
         self.now_title.setText(track["title"])
         self.now_artist.setText(track["artist"])
+        pm = get_cover_pixmap(track, 70)
+        if pm:
+            self.cover_label.setPixmap(pm)
+            self.cover_label.setStyleSheet("border-radius: 8px; background-color: transparent;")
+        else:
+            self.cover_label.setPixmap(QPixmap())
+            t = self.theme
+            self.cover_label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {t['bg_tertiary']};
+                    border-radius: 8px;
+                }}
+            """)
 
     def toggle_play(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
