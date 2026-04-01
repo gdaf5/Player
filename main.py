@@ -650,69 +650,136 @@ class SearchWorker(QThread):
 
     def run(self):
         try:
-            import yt_dlp
-            ydl_opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "extract_flat": True,
-            }
-            results = []
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                if self.platform == "youtube":
-                    search_query = f"ytsearch10:{self.query}"
-                elif self.platform == "soundcloud":
-                    search_query = f"scsearch10:{self.query}"
-                else:
-                    search_query = f"ytsearch10:{self.query}"
-
-                info = ydl.extract_info(search_query, download=False)
-                if info and info.get("entries"):
-                    for entry in info["entries"]:
-                        url = entry.get("url", "")
-                        if not url and entry.get("id"):
-                            if self.platform == "youtube":
-                                url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
-                            elif self.platform == "soundcloud":
-                                url = entry.get("permalink_url", f"https://soundcloud.com/{entry.get('id', '')}")
-
-                        results.append({
-                            "title": entry.get("title", "Unknown"),
-                            "uploader": entry.get("uploader", entry.get("channel", entry.get("artist", "Unknown"))),
-                            "url": url,
-                            "id": entry.get("id", ""),
-                            "duration": entry.get("duration", 0),
-                            "duration_string": entry.get("duration_string", ""),
-                            "thumbnail": entry.get("thumbnail", ""),
-                            "platform": self.platform,
-                        })
-            self.results_ready.emit(results)
+            if self.platform == "vk":
+                self._search_vk()
+            else:
+                self._search_ytdlp()
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+    def _search_ytdlp(self):
+        import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "socket_timeout": 10,
+        }
+        results = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if self.platform == "youtube":
+                search_query = f"ytsearch10:{self.query}"
+            else:
+                search_query = f"ytsearch10:{self.query}"
+
+            info = ydl.extract_info(search_query, download=False)
+            if info and info.get("entries"):
+                for entry in info["entries"]:
+                    url = entry.get("url", "")
+                    if not url and entry.get("id"):
+                        url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+
+                    results.append({
+                        "title": entry.get("title", "Unknown"),
+                        "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
+                        "url": url,
+                        "id": entry.get("id", ""),
+                        "duration": entry.get("duration", 0),
+                        "duration_string": entry.get("duration_string", ""),
+                        "thumbnail": entry.get("thumbnail", ""),
+                        "platform": self.platform,
+                    })
+        self.results_ready.emit(results)
+
+    def _search_vk(self):
+        import urllib.request
+        import urllib.parse
+        import json
+        import re
+
+        results = []
+        query_encoded = urllib.parse.quote(self.query)
+
+        try:
+            url = f"https://vk.com/audio?q={query_encoded}"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            pattern = r'"id":(\d+),"owner_id":(-?\d+),"artist":"([^"]*)","title":"([^"]*)","duration":(\d+),"url":"([^"]*)"'
+            matches = re.findall(pattern, html)
+
+            for m in matches:
+                vid, owner_id, artist, title, duration, audio_url = m
+                full_url = f"https://vk.com/audio{owner_id}_{vid}"
+                results.append({
+                    "title": title.replace("\\u0026", "&").replace("\\/", "/"),
+                    "uploader": artist.replace("\\u0026", "&").replace("\\/", "/"),
+                    "url": full_url,
+                    "direct_url": audio_url.replace("\\u0026", "&").replace("\\/", "/"),
+                    "id": f"{owner_id}_{vid}",
+                    "duration": int(duration),
+                    "duration_string": f"{int(duration) // 60}:{int(duration) % 60:02d}",
+                    "thumbnail": "",
+                    "platform": "vk",
+                })
+
+            if not results:
+                pattern2 = r'"artist":"([^"]+)"\s*,\s*"title":"([^"]+)"\s*,\s*"duration":(\d+)\s*,\s*"url":"([^"]+)"'
+                matches2 = re.findall(pattern2, html)
+                for m in matches2:
+                    artist, title, duration, audio_url = m
+                    results.append({
+                        "title": title.replace("\\u0026", "&").replace("\\/", "/"),
+                        "uploader": artist.replace("\\u0026", "&").replace("\\/", "/"),
+                        "url": f"https://vk.com/audio?q={query_encoded}",
+                        "direct_url": audio_url.replace("\\u0026", "&").replace("\\/", "/"),
+                        "id": "",
+                        "duration": int(duration),
+                        "duration_string": f"{int(duration) // 60}:{int(duration) % 60:02d}",
+                        "thumbnail": "",
+                        "platform": "vk",
+                    })
+
+        except Exception as e:
+            self.error_occurred.emit(f"VK search error: {e}")
+            return
+
+        self.results_ready.emit(results[:10])
 
 
 class StreamWorker(QThread):
     stream_ready = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, url):
+    def __init__(self, url, result=None):
         super().__init__()
         self.url = url
+        self.result = result or {}
 
     def run(self):
         try:
-            import yt_dlp
-            ydl_opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "format": "bestaudio/best",
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(self.url, download=False)
-                stream_url = info.get("url", "")
-                if stream_url:
-                    self.stream_ready.emit(stream_url)
-                else:
-                    self.error_occurred.emit("No stream URL found")
+            if self.result.get("platform") == "vk" and self.result.get("direct_url"):
+                self.stream_ready.emit(self.result["direct_url"])
+            else:
+                import yt_dlp
+                ydl_opts = {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "format": "bestaudio/best",
+                    "socket_timeout": 10,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(self.url, download=False)
+                    stream_url = info.get("url", "")
+                    if stream_url:
+                        self.stream_ready.emit(stream_url)
+                    else:
+                        self.error_occurred.emit("No stream URL found")
         except Exception as e:
             self.error_occurred.emit(str(e))
 
@@ -722,28 +789,60 @@ class DownloadWorker(QThread):
     download_progress = pyqtSignal(int)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, url, save_dir):
+    def __init__(self, url, save_dir, result=None):
         super().__init__()
         self.url = url
         self.save_dir = save_dir
+        self.result = result or {}
 
     def run(self):
         try:
-            import yt_dlp
             os.makedirs(self.save_dir, exist_ok=True)
-            ydl_opts = {
-                "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
-                "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
-                "quiet": True,
-                "no_warnings": True,
-                "progress_hooks": [self._progress_hook],
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(self.url, download=True)
-                title = info.get("title", "downloaded")
-                self.download_complete.emit(title)
+
+            if self.result.get("platform") == "vk" and self.result.get("direct_url"):
+                self._download_vk()
+            else:
+                self._download_ytdlp()
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+    def _download_vk(self):
+        import urllib.request
+        title = self.result.get("title", "track")
+        safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
+        out_path = os.path.join(self.save_dir, f"{safe_title}.mp3")
+        req = urllib.request.Request(self.result["direct_url"], headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            total = resp.getheader("Content-Length")
+            total = int(total) if total else 0
+            downloaded = 0
+            with open(out_path, "wb") as f:
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        self.download_progress.emit(int(downloaded / total * 100))
+        self.download_complete.emit(title)
+
+    def _download_ytdlp(self):
+        import yt_dlp
+        ydl_opts = {
+            "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
+            "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
+            "quiet": True,
+            "no_warnings": True,
+            "socket_timeout": 10,
+            "progress_hooks": [self._progress_hook],
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(self.url, download=True)
+            title = info.get("title", "downloaded")
+            self.download_complete.emit(title)
 
     def _progress_hook(self, d):
         if d["status"] == "downloading":
@@ -959,7 +1058,7 @@ class MusicPlayer(QMainWindow):
 
         self.platform_combo = QComboBox()
         self.platform_combo.addItem("YouTube")
-        self.platform_combo.addItem("SoundCloud")
+        self.platform_combo.addItem("VK")
         self.platform_combo.setFixedWidth(100)
         search_layout.addWidget(self.platform_combo)
 
@@ -1240,7 +1339,7 @@ class MusicPlayer(QMainWindow):
         if not query:
             return
 
-        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "soundcloud"
+        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "vk"
 
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
@@ -1275,7 +1374,7 @@ class MusicPlayer(QMainWindow):
         if self.stream_worker and self.stream_worker.isRunning():
             self.stream_worker.terminate()
 
-        self.stream_worker = StreamWorker(result["url"])
+        self.stream_worker = StreamWorker(result["url"], result)
         self.stream_worker.stream_ready.connect(self.on_stream_ready)
         self.stream_worker.error_occurred.connect(self.on_stream_error)
         self.stream_worker.start()
@@ -1318,7 +1417,7 @@ class MusicPlayer(QMainWindow):
         if self.download_worker and self.download_worker.isRunning():
             self.download_worker.terminate()
 
-        self.download_worker = DownloadWorker(result["url"], self.download_dir)
+        self.download_worker = DownloadWorker(result["url"], self.download_dir, result)
         self.download_worker.download_complete.connect(self.on_download_complete)
         self.download_worker.download_progress.connect(self.search_progress.setValue)
         self.download_worker.error_occurred.connect(self.on_download_error)
