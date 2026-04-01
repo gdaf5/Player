@@ -209,6 +209,160 @@ THEMES = {
         "danger": "#bf616a",
         "warning": "#ebcb8b",
     },
+    "Cherry Blossom": {
+        "bg_primary": "#1a0f14",
+        "bg_secondary": "#241520",
+        "bg_tertiary": "#301e2c",
+        "bg_hover": "#3d2838",
+        "bg_active": "#4a3045",
+        "text_primary": "#f5e6f0",
+        "text_secondary": "#c8a0b8",
+        "text_muted": "#7a5568",
+        "accent": "#ffb7c5",
+        "accent_hover": "#ffc8d4",
+        "border": "#301e2c",
+        "progress_bg": "#241520",
+        "progress_fill": "#ffb7c5",
+        "scrollbar": "#301e2c",
+        "scrollbar_hover": "#4a3045",
+        "gradient_start": "#ffb7c5",
+        "gradient_end": "#ff69b4",
+        "success": "#98fb98",
+        "danger": "#ff6b6b",
+        "warning": "#ffd700",
+    },
+    "Deep Purple": {
+        "bg_primary": "#0d0618",
+        "bg_secondary": "#160d28",
+        "bg_tertiary": "#1f1238",
+        "bg_hover": "#281848",
+        "bg_active": "#322060",
+        "text_primary": "#e0d0f8",
+        "text_secondary": "#9888b8",
+        "text_muted": "#5a4870",
+        "accent": "#b388ff",
+        "accent_hover": "#c8a0ff",
+        "border": "#1f1238",
+        "progress_bg": "#160d28",
+        "progress_fill": "#b388ff",
+        "scrollbar": "#1f1238",
+        "scrollbar_hover": "#322060",
+        "gradient_start": "#b388ff",
+        "gradient_end": "#e040fb",
+        "success": "#69f0ae",
+        "danger": "#ff5252",
+        "warning": "#ffd740",
+    },
+    "Emerald": {
+        "bg_primary": "#061410",
+        "bg_secondary": "#0a2018",
+        "bg_tertiary": "#0e2e22",
+        "bg_hover": "#123a2c",
+        "bg_active": "#184838",
+        "text_primary": "#d4f0e8",
+        "text_secondary": "#88c8b0",
+        "text_muted": "#487860",
+        "accent": "#34d399",
+        "accent_hover": "#4adeb0",
+        "border": "#0e2e22",
+        "progress_bg": "#0a2018",
+        "progress_fill": "#34d399",
+        "scrollbar": "#0e2e22",
+        "scrollbar_hover": "#184838",
+        "gradient_start": "#34d399",
+        "gradient_end": "#06b6d4",
+        "success": "#34d399",
+        "danger": "#ef4444",
+        "warning": "#fbbf24",
+    },
+    "Amber": {
+        "bg_primary": "#1a1408",
+        "bg_secondary": "#28200c",
+        "bg_tertiary": "#383014",
+        "bg_hover": "#48401c",
+        "bg_active": "#585024",
+        "text_primary": "#f0e0c0",
+        "text_secondary": "#b8a080",
+        "text_muted": "#706040",
+        "accent": "#fbbf24",
+        "accent_hover": "#fcd34d",
+        "border": "#383014",
+        "progress_bg": "#28200c",
+        "progress_fill": "#fbbf24",
+        "scrollbar": "#383014",
+        "scrollbar_hover": "#585024",
+        "gradient_start": "#fbbf24",
+        "gradient_end": "#f97316",
+        "success": "#22c55e",
+        "danger": "#ef4444",
+        "warning": "#fbbf24",
+    },
+    "Crimson": {
+        "bg_primary": "#180808",
+        "bg_secondary": "#280e0e",
+        "bg_tertiary": "#381414",
+        "bg_hover": "#482020",
+        "bg_active": "#582828",
+        "text_primary": "#f0d0d0",
+        "text_secondary": "#b88888",
+        "text_muted": "#704848",
+        "accent": "#ef4444",
+        "accent_hover": "#f87171",
+        "border": "#381414",
+        "progress_bg": "#280e0e",
+        "progress_fill": "#ef4444",
+        "scrollbar": "#381414",
+        "scrollbar_hover": "#582828",
+        "gradient_start": "#ef4444",
+        "gradient_end": "#f97316",
+        "success": "#22c55e",
+        "danger": "#ef4444",
+        "warning": "#fbbf24",
+    },
+    "Aqua": {
+        "bg_primary": "#061218",
+        "bg_secondary": "#0a1e28",
+        "bg_tertiary": "#0e2a38",
+        "bg_hover": "#123848",
+        "bg_active": "#184858",
+        "text_primary": "#d0f0f8",
+        "text_secondary": "#88c0d8",
+        "text_muted": "#487080",
+        "accent": "#22d3ee",
+        "accent_hover": "#67e8f9",
+        "border": "#0e2a38",
+        "progress_bg": "#0a1e28",
+        "progress_fill": "#22d3ee",
+        "scrollbar": "#0e2a38",
+        "scrollbar_hover": "#184858",
+        "gradient_start": "#22d3ee",
+        "gradient_end": "#06b6d4",
+        "success": "#22c55e",
+        "danger": "#ef4444",
+        "warning": "#fbbf24",
+    },
+    "Spider": {
+        "bg_primary": "#080808",
+        "bg_secondary": "#101010",
+        "bg_tertiary": "#1a1a1a",
+        "bg_hover": "#222222",
+        "bg_active": "#2a2a2a",
+        "text_primary": "#e0e0e0",
+        "text_secondary": "#888888",
+        "text_muted": "#444444",
+        "accent": "#cc0000",
+        "accent_hover": "#ee0000",
+        "border": "#1a1a1a",
+        "progress_bg": "#101010",
+        "progress_fill": "#cc0000",
+        "scrollbar": "#1a1a1a",
+        "scrollbar_hover": "#2a2a2a",
+        "gradient_start": "#cc0000",
+        "gradient_end": "#880000",
+        "success": "#22c55e",
+        "danger": "#cc0000",
+        "warning": "#ff8800",
+    },
 }
 
 
@@ -312,12 +466,12 @@ def generate_stylesheet(t):
     QPushButton#play_btn {{
         background-color: {t['accent']};
         color: {t['bg_primary']};
-        border-radius: 25px;
-        min-width: 50px;
-        min-height: 50px;
-        max-width: 50px;
-        max-height: 50px;
-        font-size: 18px;
+        border-radius: 22px;
+        min-width: 46px;
+        min-height: 46px;
+        max-width: 46px;
+        max-height: 46px;
+        font-size: 16px;
     }}
     QPushButton#play_btn:hover {{
         background-color: {t['accent_hover']};
@@ -818,6 +972,46 @@ class DownloadWorker(QThread):
 
 # ==================== GIF PANEL ====================
 
+class MarqueeLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._offset = 0
+        self._full_text = text
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._paused = False
+        self._scrolling = False
+
+    def setText(self, text):
+        self._full_text = text
+        self._offset = 0
+        self._scrolling = False
+        self._timer.stop()
+        super().setText(text)
+
+    def _tick(self):
+        if self._paused:
+            return
+        self._offset += 1
+        if self._offset > len(self._full_text):
+            self._offset = 0
+            self._scrolling = False
+            self._timer.stop()
+            super().setText(self._full_text)
+            return
+        display = self._full_text[self._offset:] + "   " + self._full_text[:self._offset]
+        super().setText(display)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._full_text)
+        if text_w > self.width() and not self._scrolling:
+            self._scrolling = True
+            self._offset = 0
+            self._timer.start(150)
+
+
 class GifPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1148,18 +1342,28 @@ class MusicPlayer(QMainWindow):
         # Player bar
         self.player_bar = QFrame()
         self.player_bar.setObjectName("player_bar")
-        self.player_bar.setFixedHeight(90)
-        player_bar_layout = QHBoxLayout(self.player_bar)
-        player_bar_layout.setContentsMargins(20, 10, 20, 10)
-        player_bar_layout.setSpacing(20)
+        self.player_bar.setFixedHeight(100)
 
-        # Cover art (left)
-        cover_layout = QVBoxLayout()
-        cover_layout.setSpacing(0)
-        cover_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        player_bar_main = QVBoxLayout(self.player_bar)
+        player_bar_main.setContentsMargins(0, 0, 0, 0)
+        player_bar_main.setSpacing(0)
+
+        player_bar_row = QHBoxLayout()
+        player_bar_row.setContentsMargins(20, 8, 20, 8)
+        player_bar_row.setSpacing(0)
+
+        # === LEFT: cover + info (fixed 350px, never grows) ===
+        left_widget = QWidget()
+        left_widget.setFixedWidth(350)
+        left_layout = QHBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.cover_label = QLabel()
         self.cover_label.setFixedSize(70, 70)
+        self.cover_label.setMinimumSize(70, 70)
+        self.cover_label.setMaximumSize(70, 70)
         self.cover_label.setStyleSheet(f"""
             QLabel {{
                 background-color: {self.theme['bg_tertiary']};
@@ -1167,34 +1371,38 @@ class MusicPlayer(QMainWindow):
             }}
         """)
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cover_layout.addWidget(self.cover_label)
+        left_layout.addWidget(self.cover_label)
 
-        player_bar_layout.addLayout(cover_layout)
-
-        # Track info (left-center)
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(2)
-        info_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        info_widget = QWidget()
+        info_layout = QVBoxLayout(info_widget)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(3)
 
         self.now_title = QLabel("No track selected")
         self.now_title.setObjectName("title_label")
         self.now_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {self.theme['text_primary']};")
+        self.now_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         info_layout.addWidget(self.now_title)
 
         self.now_artist = QLabel("Select a track to play")
         self.now_artist.setObjectName("artist_label")
         self.now_artist.setStyleSheet(f"font-size: 12px; color: {self.theme['text_secondary']};")
+        self.now_artist.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         info_layout.addWidget(self.now_artist)
 
-        player_bar_layout.addLayout(info_layout)
+        left_layout.addWidget(info_widget)
+        player_bar_row.addWidget(left_widget)
 
-        # Controls (center)
-        controls_layout = QVBoxLayout()
-        controls_layout.setSpacing(5)
+        # === CENTER: controls + progress (takes all remaining space) ===
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(10, 0, 10, 0)
+        center_layout.setSpacing(4)
+        center_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-        btn_row.addStretch()
+        btn_row.setSpacing(8)
+        btn_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.shuffle_btn = QPushButton("\U0001f500")
         self.shuffle_btn.setObjectName("control_btn")
@@ -1221,11 +1429,11 @@ class MusicPlayer(QMainWindow):
         self.repeat_btn.clicked.connect(self.toggle_repeat)
         btn_row.addWidget(self.repeat_btn)
 
-        btn_row.addStretch()
-        controls_layout.addLayout(btn_row)
+        center_layout.addLayout(btn_row)
 
         progress_layout = QHBoxLayout()
         progress_layout.setSpacing(10)
+        progress_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.time_current = QLabel("0:00")
         self.time_current.setObjectName("time_label")
@@ -1241,31 +1449,35 @@ class MusicPlayer(QMainWindow):
 
         self.time_total = QLabel("0:00")
         self.time_total.setObjectName("time_label")
-        self.time_total.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px; text-align: right;")
+        self.time_total.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px;")
         progress_layout.addWidget(self.time_total)
 
-        controls_layout.addLayout(progress_layout)
-        player_bar_layout.addLayout(controls_layout)
-        player_bar_layout.setStretch(1, 1)
+        center_layout.addLayout(progress_layout)
+        player_bar_row.addWidget(center_widget, 1)
 
-        volume_layout = QHBoxLayout()
-        volume_layout.setSpacing(8)
+        # === RIGHT: volume (fixed 150px, never grows) ===
+        right_widget = QWidget()
+        right_widget.setFixedWidth(150)
+        right_layout = QHBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.volume_btn = QPushButton("\U0001f50a")
         self.volume_btn.setObjectName("small_btn")
         self.volume_btn.clicked.connect(self.toggle_mute)
-        volume_layout.addWidget(self.volume_btn)
+        right_layout.addWidget(self.volume_btn)
 
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(70)
-        self.volume_slider.setFixedWidth(100)
+        self.volume_slider.setFixedWidth(80)
         self.volume_slider.valueChanged.connect(self.change_volume)
-        volume_layout.addWidget(self.volume_slider)
+        right_layout.addWidget(self.volume_slider)
 
-        player_bar_layout.addLayout(volume_layout)
-        player_bar_layout.setStretch(2, 0)
+        player_bar_row.addWidget(right_widget)
 
+        player_bar_main.addLayout(player_bar_row)
         main_layout.addWidget(self.player_bar)
 
     def connect_signals(self):
