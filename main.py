@@ -643,9 +643,10 @@ class SearchWorker(QThread):
     results_ready = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, query):
+    def __init__(self, query, platform="youtube"):
         super().__init__()
         self.query = query
+        self.platform = platform
 
     def run(self):
         try:
@@ -654,21 +655,31 @@ class SearchWorker(QThread):
                 "quiet": True,
                 "no_warnings": True,
                 "extract_flat": True,
-                "default_search": "ytsearch10",
             }
             results = []
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch10:{self.query}", download=False)
+                if self.platform == "youtube":
+                    search_query = f"ytsearch10:{self.query}"
+                else:
+                    search_query = f"vksearch10:{self.query}"
+
+                info = ydl.extract_info(search_query, download=False)
                 if info and info.get("entries"):
                     for entry in info["entries"]:
+                        platform = self.platform
+                        url = entry.get("url", "")
+                        if platform == "youtube" and entry.get("id"):
+                            url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+
                         results.append({
                             "title": entry.get("title", "Unknown"),
                             "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
-                            "url": f"https://www.youtube.com/watch?v={entry.get('id', '')}",
+                            "url": url,
                             "id": entry.get("id", ""),
                             "duration": entry.get("duration", 0),
                             "duration_string": entry.get("duration_string", ""),
                             "thumbnail": entry.get("thumbnail", ""),
+                            "platform": platform,
                         })
             self.results_ready.emit(results)
         except Exception as e:
@@ -942,8 +953,14 @@ class MusicPlayer(QMainWindow):
         search_layout.setContentsMargins(15, 5, 15, 5)
         search_layout.setSpacing(5)
 
+        self.platform_combo = QComboBox()
+        self.platform_combo.addItem("YouTube")
+        self.platform_combo.addItem("VK")
+        self.platform_combo.setFixedWidth(90)
+        search_layout.addWidget(self.platform_combo)
+
         self.online_search_input = QLineEdit()
-        self.online_search_input.setPlaceholderText("Search YouTube...")
+        self.online_search_input.setPlaceholderText("Search...")
         self.online_search_input.returnPressed.connect(self.search_online)
         search_layout.addWidget(self.online_search_input)
 
@@ -1219,15 +1236,17 @@ class MusicPlayer(QMainWindow):
         if not query:
             return
 
+        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "vk"
+
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
         self.search_results_list.clear()
-        self.statusBar().showMessage(f"Searching: {query}...")
+        self.statusBar().showMessage(f"Searching {platform}: {query}...")
 
         if self.search_worker and self.search_worker.isRunning():
             self.search_worker.terminate()
 
-        self.search_worker = SearchWorker(query)
+        self.search_worker = SearchWorker(query, platform)
         self.search_worker.results_ready.connect(self.on_search_results)
         self.search_worker.error_occurred.connect(self.on_search_error)
         self.search_worker.start()
@@ -1380,6 +1399,10 @@ class MusicPlayer(QMainWindow):
         if not os.path.exists(track["path"]):
             self.show_status(f"File not found: {track['title']}")
             return
+
+        if not track.get("cover_path"):
+            info = get_track_info(track["path"])
+            track["cover_path"] = info.get("cover_path")
 
         self.is_streaming = False
         self.player.setSource(QUrl.fromLocalFile(track["path"]))
@@ -1693,6 +1716,10 @@ class MusicPlayer(QMainWindow):
                 self.audio_output.setVolume(vol / 100.0)
             except Exception as e:
                 print(f"Error loading config: {e}")
+        for track in self.tracks:
+            if not track.get("cover_path") and os.path.exists(track["path"]):
+                info = get_track_info(track["path"])
+                track["cover_path"] = info.get("cover_path")
         self.refresh_track_list()
         self.refresh_playlist_list()
 
