@@ -650,8 +650,8 @@ class SearchWorker(QThread):
 
     def run(self):
         try:
-            if self.platform == "vk":
-                self._search_vk()
+            if self.platform == "yandex":
+                self._search_yandex()
             else:
                 self._search_ytdlp()
         except Exception as e:
@@ -667,11 +667,7 @@ class SearchWorker(QThread):
         }
         results = []
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            if self.platform == "youtube":
-                search_query = f"ytsearch10:{self.query}"
-            else:
-                search_query = f"ytsearch10:{self.query}"
-
+            search_query = f"ytsearch10:{self.query}"
             info = ydl.extract_info(search_query, download=False)
             if info and info.get("entries"):
                 for entry in info["entries"]:
@@ -691,65 +687,31 @@ class SearchWorker(QThread):
                     })
         self.results_ready.emit(results)
 
-    def _search_vk(self):
-        import urllib.request
-        import urllib.parse
-        import json
-        import re
-
+    def _search_yandex(self):
+        import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "socket_timeout": 10,
+        }
         results = []
-        query_encoded = urllib.parse.quote(self.query)
-
-        try:
-            url = f"https://vk.com/audio?q={query_encoded}"
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-            })
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-
-            pattern = r'"id":(\d+),"owner_id":(-?\d+),"artist":"([^"]*)","title":"([^"]*)","duration":(\d+),"url":"([^"]*)"'
-            matches = re.findall(pattern, html)
-
-            for m in matches:
-                vid, owner_id, artist, title, duration, audio_url = m
-                full_url = f"https://vk.com/audio{owner_id}_{vid}"
-                results.append({
-                    "title": title.replace("\\u0026", "&").replace("\\/", "/"),
-                    "uploader": artist.replace("\\u0026", "&").replace("\\/", "/"),
-                    "url": full_url,
-                    "direct_url": audio_url.replace("\\u0026", "&").replace("\\/", "/"),
-                    "id": f"{owner_id}_{vid}",
-                    "duration": int(duration),
-                    "duration_string": f"{int(duration) // 60}:{int(duration) % 60:02d}",
-                    "thumbnail": "",
-                    "platform": "vk",
-                })
-
-            if not results:
-                pattern2 = r'"artist":"([^"]+)"\s*,\s*"title":"([^"]+)"\s*,\s*"duration":(\d+)\s*,\s*"url":"([^"]+)"'
-                matches2 = re.findall(pattern2, html)
-                for m in matches2:
-                    artist, title, duration, audio_url = m
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            search_query = f"ymsearch10:{self.query}"
+            info = ydl.extract_info(search_query, download=False)
+            if info and info.get("entries"):
+                for entry in info["entries"]:
                     results.append({
-                        "title": title.replace("\\u0026", "&").replace("\\/", "/"),
-                        "uploader": artist.replace("\\u0026", "&").replace("\\/", "/"),
-                        "url": f"https://vk.com/audio?q={query_encoded}",
-                        "direct_url": audio_url.replace("\\u0026", "&").replace("\\/", "/"),
-                        "id": "",
-                        "duration": int(duration),
-                        "duration_string": f"{int(duration) // 60}:{int(duration) % 60:02d}",
-                        "thumbnail": "",
-                        "platform": "vk",
+                        "title": entry.get("title", "Unknown"),
+                        "uploader": entry.get("artist", entry.get("uploader", "Unknown")),
+                        "url": entry.get("url", entry.get("webpage_url", "")),
+                        "id": entry.get("id", ""),
+                        "duration": entry.get("duration", 0),
+                        "duration_string": entry.get("duration_string", ""),
+                        "thumbnail": entry.get("thumbnail", ""),
+                        "platform": "yandex",
                     })
-
-        except Exception as e:
-            self.error_occurred.emit(f"VK search error: {e}")
-            return
-
-        self.results_ready.emit(results[:10])
+        self.results_ready.emit(results)
 
 
 class StreamWorker(QThread):
@@ -1058,12 +1020,13 @@ class MusicPlayer(QMainWindow):
 
         self.platform_combo = QComboBox()
         self.platform_combo.addItem("YouTube")
-        self.platform_combo.addItem("VK")
+        self.platform_combo.addItem("URL")
         self.platform_combo.setFixedWidth(100)
+        self.platform_combo.currentTextChanged.connect(self.on_platform_changed)
         search_layout.addWidget(self.platform_combo)
 
         self.online_search_input = QLineEdit()
-        self.online_search_input.setPlaceholderText("Search...")
+        self.online_search_input.setPlaceholderText("Search YouTube...")
         self.online_search_input.returnPressed.connect(self.search_online)
         search_layout.addWidget(self.online_search_input)
 
@@ -1190,6 +1153,7 @@ class MusicPlayer(QMainWindow):
         player_bar_layout.setContentsMargins(20, 10, 20, 10)
         player_bar_layout.setSpacing(20)
 
+        # Cover art (left)
         cover_layout = QVBoxLayout()
         cover_layout.setSpacing(0)
         cover_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1206,8 +1170,8 @@ class MusicPlayer(QMainWindow):
         cover_layout.addWidget(self.cover_label)
 
         player_bar_layout.addLayout(cover_layout)
-        player_bar_layout.setStretch(0, 0)
 
+        # Track info (left-center)
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
         info_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -1223,8 +1187,8 @@ class MusicPlayer(QMainWindow):
         info_layout.addWidget(self.now_artist)
 
         player_bar_layout.addLayout(info_layout)
-        player_bar_layout.setStretch(1, 0)
 
+        # Controls (center)
         controls_layout = QVBoxLayout()
         controls_layout.setSpacing(5)
 
@@ -1334,25 +1298,44 @@ class MusicPlayer(QMainWindow):
 
     # ==================== ONLINE SEARCH ====================
 
+    def on_platform_changed(self):
+        if self.platform_combo.currentText() == "URL":
+            self.online_search_input.setPlaceholderText("Paste URL (YouTube, Yandex, VK...)")
+        else:
+            self.online_search_input.setPlaceholderText("Search YouTube...")
+
     def search_online(self):
         query = self.online_search_input.text().strip()
         if not query:
             return
 
-        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "vk"
+        if self.platform_combo.currentText() == "URL":
+            self.play_url(query)
+            return
 
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
         self.search_results_list.clear()
-        self.statusBar().showMessage(f"Searching {platform}: {query}...")
+        self.statusBar().showMessage(f"Searching: {query}...")
 
         if self.search_worker and self.search_worker.isRunning():
             self.search_worker.terminate()
 
-        self.search_worker = SearchWorker(query, platform)
+        self.search_worker = SearchWorker(query, "youtube")
         self.search_worker.results_ready.connect(self.on_search_results)
         self.search_worker.error_occurred.connect(self.on_search_error)
         self.search_worker.start()
+
+    def play_url(self, url):
+        self.statusBar().showMessage(f"Loading: {url}...")
+
+        if self.stream_worker and self.stream_worker.isRunning():
+            self.stream_worker.terminate()
+
+        self.stream_worker = StreamWorker(url, {"platform": "yt"})
+        self.stream_worker.stream_ready.connect(self.on_stream_ready)
+        self.stream_worker.error_occurred.connect(self.on_stream_error)
+        self.stream_worker.start()
 
     def on_search_results(self, results):
         self.search_results = results
