@@ -3,6 +3,8 @@ import os
 import json
 import glob
 import random
+import subprocess
+import threading
 from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
@@ -11,10 +13,11 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QSlider,
     QFileDialog, QInputDialog, QMessageBox, QFrame, QSplitter,
-    QComboBox, QMenu, QLineEdit,
+    QComboBox, QMenu, QLineEdit, QTabWidget, QStackedWidget,
+    QProgressBar,
 )
 from PyQt6.QtCore import (
-    Qt, QUrl, QTimer, QSize, QSettings,
+    Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread,
 )
 from PyQt6.QtGui import (
     QFont, QColor, QPixmap, QPainter, QMovie,
@@ -210,9 +213,7 @@ THEMES = {
 
 def generate_stylesheet(t):
     return f"""
-    QMainWindow {{
-        background-color: {t['bg_primary']};
-    }}
+    QMainWindow {{ background-color: {t['bg_primary']}; }}
     QWidget {{
         background-color: transparent;
         color: {t['text_primary']};
@@ -234,43 +235,40 @@ def generate_stylesheet(t):
         background-color: transparent;
         border-bottom: 1px solid {t['border']};
     }}
-    QListWidget#track_list, QListWidget#playlist_list {{
+    QListWidget#track_list, QListWidget#playlist_list, QListWidget#search_results {{
         background-color: transparent;
         border: none;
         color: {t['text_primary']};
         font-size: 13px;
         outline: none;
     }}
-    QListWidget#track_list::item, QListWidget#playlist_list::item {{
+    QListWidget#track_list::item, QListWidget#playlist_list::item, QListWidget#search_results::item {{
         padding: 10px 15px;
         border-radius: 8px;
         margin: 2px 8px;
         border: none;
     }}
-    QListWidget#track_list::item:hover, QListWidget#playlist_list::item:hover {{
+    QListWidget#track_list::item:hover, QListWidget#playlist_list::item:hover, QListWidget#search_results::item:hover {{
         background-color: {t['bg_hover']};
     }}
-    QListWidget#track_list::item:selected {{
+    QListWidget#track_list::item:selected, QListWidget#playlist_list::item:selected, QListWidget#search_results::item:selected {{
         background-color: {t['bg_active']};
         color: {t['accent']};
     }}
-    QListWidget#playlist_list::item:selected {{
-        background-color: {t['bg_active']};
-        color: {t['accent']};
-    }}
-    QListWidget#track_list QScrollBar:vertical {{
+    QListWidget#track_list QScrollBar:vertical, QListWidget#search_results QScrollBar:vertical {{
         width: 6px;
         background: transparent;
     }}
-    QListWidget#track_list QScrollBar::handle:vertical {{
+    QListWidget#track_list QScrollBar::handle:vertical, QListWidget#search_results QScrollBar::handle:vertical {{
         background: {t['scrollbar']};
         border-radius: 3px;
         min-height: 30px;
     }}
-    QListWidget#track_list QScrollBar::handle:vertical:hover {{
+    QListWidget#track_list QScrollBar::handle:vertical:hover, QListWidget#search_results QScrollBar::handle:vertical:hover {{
         background: {t['scrollbar_hover']};
     }}
-    QListWidget#track_list QScrollBar::add-line, QListWidget#track_list QScrollBar::sub-line {{
+    QListWidget#track_list QScrollBar::add-line, QListWidget#track_list QScrollBar::sub-line,
+    QListWidget#search_results QScrollBar::add-line, QListWidget#search_results QScrollBar::sub-line {{
         height: 0px;
     }}
     QSlider::groove:horizontal {{
@@ -348,6 +346,16 @@ def generate_stylesheet(t):
     }}
     QPushButton#accent_btn:hover {{
         background-color: {t['accent_hover']};
+    }}
+    QPushButton#download_btn {{
+        background-color: {t['success']};
+        color: {t['bg_primary']};
+        border-radius: 6px;
+        font-size: 11px;
+        padding: 4px 10px;
+    }}
+    QPushButton#download_btn:hover {{
+        opacity: 0.85;
     }}
     QComboBox {{
         background-color: {t['bg_tertiary']};
@@ -459,6 +467,36 @@ def generate_stylesheet(t):
     QDialog QLabel {{
         color: {t['text_primary']};
     }}
+    QTabWidget::pane {{
+        border: none;
+        background-color: transparent;
+    }}
+    QTabBar::tab {{
+        background-color: {t['bg_tertiary']};
+        color: {t['text_secondary']};
+        padding: 8px 16px;
+        border-radius: 8px 8px 0 0;
+        margin-right: 2px;
+        font-size: 12px;
+    }}
+    QTabBar::tab:selected {{
+        background-color: {t['bg_active']};
+        color: {t['accent']};
+    }}
+    QTabBar::tab:hover {{
+        background-color: {t['bg_hover']};
+    }}
+    QProgressBar {{
+        border: none;
+        background-color: {t['progress_bg']};
+        border-radius: 3px;
+        height: 6px;
+        text-align: center;
+    }}
+    QProgressBar::chunk {{
+        background-color: {t['progress_fill']};
+        border-radius: 3px;
+    }}
     """
 
 
@@ -527,6 +565,22 @@ class TrackListItem(QListWidgetItem):
         self.setToolTip(f"{self.track['title']}\n{self.track['artist']}\n{self.track['album']}")
 
 
+class SearchListItem(QListWidgetItem):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+        self.update_display()
+
+    def update_display(self):
+        title = self.result.get("title", "Unknown")
+        uploader = self.result.get("uploader", "Unknown")
+        duration = self.result.get("duration_string", "")
+        self.setText(f"{uploader} - {title}")
+        if duration:
+            self.setText(f"{uploader} - {title}  [{duration}]")
+        self.setToolTip(f"{title}\n{uploader}")
+
+
 class PlaylistListItem(QListWidgetItem):
     def __init__(self, name, track_count=0):
         super().__init__()
@@ -547,6 +601,116 @@ def format_time(ms):
     seconds = seconds % 60
     return f"{minutes}:{seconds:02d}"
 
+
+# ==================== SEARCH THREAD ====================
+
+class SearchWorker(QThread):
+    results_ready = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, query):
+        super().__init__()
+        self.query = query
+
+    def run(self):
+        try:
+            import yt_dlp
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "extract_flat": True,
+                "default_search": "ytsearch10",
+            }
+            results = []
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch10:{self.query}", download=False)
+                if info and info.get("entries"):
+                    for entry in info["entries"]:
+                        results.append({
+                            "title": entry.get("title", "Unknown"),
+                            "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
+                            "url": f"https://www.youtube.com/watch?v={entry.get('id', '')}",
+                            "id": entry.get("id", ""),
+                            "duration": entry.get("duration", 0),
+                            "duration_string": entry.get("duration_string", ""),
+                            "thumbnail": entry.get("thumbnail", ""),
+                        })
+            self.results_ready.emit(results)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+
+class StreamWorker(QThread):
+    stream_ready = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+
+    def run(self):
+        try:
+            import yt_dlp
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestaudio/best",
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+                stream_url = info.get("url", "")
+                if stream_url:
+                    self.stream_ready.emit(stream_url)
+                else:
+                    self.error_occurred.emit("No stream URL found")
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+
+class DownloadWorker(QThread):
+    download_complete = pyqtSignal(str)
+    download_progress = pyqtSignal(int)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, url, save_dir):
+        super().__init__()
+        self.url = url
+        self.save_dir = save_dir
+
+    def run(self):
+        try:
+            import yt_dlp
+            os.makedirs(self.save_dir, exist_ok=True)
+            ydl_opts = {
+                "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
+                "format": "bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+                "quiet": True,
+                "no_warnings": True,
+                "progress_hooks": [self._progress_hook],
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.url, download=True)
+                title = info.get("title", "downloaded")
+                self.download_complete.emit(title)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _progress_hook(self, d):
+        if d["status"] == "downloading":
+            pct = d.get("_percent_str", "0%")
+            try:
+                val = float(pct.strip("%"))
+                self.download_progress.emit(int(val))
+            except:
+                pass
+
+
+# ==================== GIF PANEL ====================
 
 class GifPanel(QWidget):
     def __init__(self, parent=None):
@@ -656,6 +820,8 @@ class GifPanel(QWidget):
                 self.gif_label.setPixmap(scaled)
 
 
+# ==================== MAIN WINDOW ====================
+
 class MusicPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -672,8 +838,16 @@ class MusicPlayer(QMainWindow):
         self.current_track_index = -1
         self.shuffle = False
         self.repeat_mode = 0
-
         self.slider_pressed = False
+
+        self.is_streaming = False
+        self.stream_worker = None
+        self.search_worker = None
+        self.download_worker = None
+        self.search_results = []
+
+        self.download_dir = os.path.join(SCRIPT_DIR, "downloads")
+        os.makedirs(self.download_dir, exist_ok=True)
 
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
@@ -685,6 +859,8 @@ class MusicPlayer(QMainWindow):
         self.apply_theme(self.current_theme_name)
         self.load_saved_data()
 
+        self.statusBar().showMessage("Ready")
+
     def setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -694,6 +870,7 @@ class MusicPlayer(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
+        # Sidebar
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
         self.sidebar.setFixedWidth(260)
@@ -726,6 +903,45 @@ class MusicPlayer(QMainWindow):
         header_layout.addLayout(add_btn_layout)
         sidebar_layout.addWidget(header)
 
+        # Search section
+        search_header = QLabel("SEARCH")
+        search_header.setObjectName("section_label")
+        sidebar_layout.addWidget(search_header)
+
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(15, 5, 15, 5)
+        search_layout.setSpacing(5)
+
+        self.online_search_input = QLineEdit()
+        self.online_search_input.setPlaceholderText("Search YouTube...")
+        self.online_search_input.returnPressed.connect(self.search_online)
+        search_layout.addWidget(self.online_search_input)
+
+        self.search_online_btn = QPushButton("\U0001f50d")
+        self.search_online_btn.setObjectName("small_btn")
+        self.search_online_btn.clicked.connect(self.search_online)
+        search_layout.addWidget(self.search_online_btn)
+
+        sidebar_layout.addLayout(search_layout)
+
+        self.search_progress = QProgressBar()
+        self.search_progress.setVisible(False)
+        self.search_progress.setFixedHeight(4)
+        self.search_progress.setTextVisible(False)
+        self.search_progress.setStyleSheet(f"""
+            QProgressBar {{ background-color: {self.theme['bg_tertiary']}; border: none; border-radius: 2px; }}
+            QProgressBar::chunk {{ background-color: {self.theme['accent']}; border-radius: 2px; }}
+        """)
+        sidebar_layout.addWidget(self.search_progress)
+
+        self.search_results_list = QListWidget()
+        self.search_results_list.setObjectName("search_results")
+        self.search_results_list.itemDoubleClicked.connect(self.play_search_result)
+        self.search_results_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.search_results_list.customContextMenuRequested.connect(self.show_search_context)
+        sidebar_layout.addWidget(self.search_results_list)
+
+        # Playlists section
         pl_label = QLabel("PLAYLISTS")
         pl_label.setObjectName("section_label")
         sidebar_layout.addWidget(pl_label)
@@ -772,6 +988,7 @@ class MusicPlayer(QMainWindow):
 
         splitter.addWidget(self.sidebar)
 
+        # Main content
         self.main_content = QFrame()
         self.main_content.setObjectName("main_content")
         main_content_layout = QVBoxLayout(self.main_content)
@@ -789,7 +1006,7 @@ class MusicPlayer(QMainWindow):
         top_bar_layout.addStretch()
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search tracks...")
+        self.search_input.setPlaceholderText("Search local tracks...")
         self.search_input.setFixedWidth(250)
         self.search_input.textChanged.connect(self.filter_tracks)
         top_bar_layout.addWidget(self.search_input)
@@ -805,6 +1022,7 @@ class MusicPlayer(QMainWindow):
 
         splitter.addWidget(self.main_content)
 
+        # GIF panel
         self.gif_panel = GifPanel(self)
         splitter.addWidget(self.gif_panel)
 
@@ -814,6 +1032,7 @@ class MusicPlayer(QMainWindow):
 
         main_layout.addWidget(splitter)
 
+        # Player bar
         self.player_bar = QFrame()
         self.player_bar.setObjectName("player_bar")
         self.player_bar.setFixedHeight(90)
@@ -935,6 +1154,115 @@ class MusicPlayer(QMainWindow):
         self.track_count_label.setStyleSheet(f"color: {self.theme['text_muted']}; font-size: 11px; padding: 0 15px 10px;")
         self.current_view_title.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {self.theme['text_primary']};")
 
+    # ==================== ONLINE SEARCH ====================
+
+    def search_online(self):
+        query = self.online_search_input.text().strip()
+        if not query:
+            return
+
+        self.search_progress.setVisible(True)
+        self.search_progress.setValue(0)
+        self.search_results_list.clear()
+        self.statusBar().showMessage(f"Searching: {query}...")
+
+        if self.search_worker and self.search_worker.isRunning():
+            self.search_worker.terminate()
+
+        self.search_worker = SearchWorker(query)
+        self.search_worker.results_ready.connect(self.on_search_results)
+        self.search_worker.error_occurred.connect(self.on_search_error)
+        self.search_worker.start()
+
+    def on_search_results(self, results):
+        self.search_results = results
+        self.search_results_list.clear()
+        for r in results:
+            item = SearchListItem(r)
+            self.search_results_list.addItem(item)
+        self.search_progress.setVisible(False)
+        self.statusBar().showMessage(f"Found {len(results)} results")
+
+    def on_search_error(self, error):
+        self.search_progress.setVisible(False)
+        self.statusBar().showMessage(f"Search error: {error}")
+
+    def play_search_result(self, item):
+        result = item.result
+        self.statusBar().showMessage(f"Loading stream: {result['title']}...")
+
+        if self.stream_worker and self.stream_worker.isRunning():
+            self.stream_worker.terminate()
+
+        self.stream_worker = StreamWorker(result["url"])
+        self.stream_worker.stream_ready.connect(self.on_stream_ready)
+        self.stream_worker.error_occurred.connect(self.on_stream_error)
+        self.stream_worker.start()
+
+    def on_stream_ready(self, stream_url):
+        self.is_streaming = True
+        self.player.setSource(QUrl(stream_url))
+        self.player.play()
+        self.current_track_index = -1
+
+        self.now_title.setText(self.search_results[0]["title"] if self.search_results else "Streaming")
+        self.now_artist.setText("Online Stream")
+        self.gif_panel.play_random_gif()
+        self.statusBar().showMessage("Streaming...")
+
+    def on_stream_error(self, error):
+        self.is_streaming = False
+        self.statusBar().showMessage(f"Stream error: {error}")
+
+    def show_search_context(self, pos):
+        item = self.search_results_list.itemAt(pos)
+        if not item:
+            return
+
+        menu = QMenu(self)
+        play = menu.addAction("Play")
+        play.triggered.connect(lambda: self.play_search_result(item))
+
+        download = menu.addAction("Download")
+        download.triggered.connect(lambda: self.download_search_result(item))
+
+        menu.exec(self.search_results_list.mapToGlobal(pos))
+
+    def download_search_result(self, item):
+        result = item.result
+        self.statusBar().showMessage(f"Downloading: {result['title']}...")
+        self.search_progress.setVisible(True)
+        self.search_progress.setValue(0)
+
+        if self.download_worker and self.download_worker.isRunning():
+            self.download_worker.terminate()
+
+        self.download_worker = DownloadWorker(result["url"], self.download_dir)
+        self.download_worker.download_complete.connect(self.on_download_complete)
+        self.download_worker.download_progress.connect(self.search_progress.setValue)
+        self.download_worker.error_occurred.connect(self.on_download_error)
+        self.download_worker.start()
+
+    def on_download_complete(self, title):
+        self.search_progress.setVisible(False)
+        self.statusBar().showMessage(f"Downloaded: {title}")
+
+        # Scan downloads folder
+        for ext in (".mp3", ".m4a", ".flac", ".ogg", ".wav"):
+            for filepath in glob.glob(os.path.join(self.download_dir, f"*{ext}")):
+                info = get_track_info(filepath)
+                if info["path"] not in [t["path"] for t in self.tracks]:
+                    self.tracks.append(info)
+
+        self.refresh_track_list()
+        self.save_data()
+
+    def on_download_error(self, error):
+        self.search_progress.setVisible(False)
+        self.statusBar().showMessage(f"Download error: {error}")
+
+    # ==================== LOCAL TRACKS ====================
+
     def add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Music Folder")
         if folder:
@@ -991,6 +1319,11 @@ class MusicPlayer(QMainWindow):
         self.play_track(item.track)
 
     def play_track(self, track):
+        if not os.path.exists(track["path"]):
+            self.show_status(f"File not found: {track['title']}")
+            return
+
+        self.is_streaming = False
         self.player.setSource(QUrl.fromLocalFile(track["path"]))
         self.player.play()
         self.current_track_index = self.get_track_index(track["path"])
@@ -1018,6 +1351,12 @@ class MusicPlayer(QMainWindow):
                 self.player.play()
 
     def play_next(self):
+        if self.is_streaming:
+            self.is_streaming = False
+            if self.tracks:
+                self.play_track(self.tracks[0])
+            return
+
         if not self.tracks:
             return
 
@@ -1128,6 +1467,8 @@ class MusicPlayer(QMainWindow):
         if duration > 0:
             new_pos = int(self.progress_slider.value() / 1000 * duration)
             self.player.setPosition(new_pos)
+
+    # ==================== PLAYLISTS ====================
 
     def create_playlist(self):
         name, ok = QInputDialog.getText(self, "New Playlist", "Playlist name:")
@@ -1242,9 +1583,14 @@ class MusicPlayer(QMainWindow):
         for pl in self.playlists.values():
             if track["path"] in pl:
                 pl.remove(track["path"])
+        if self.current_track_index >= 0 and self.tracks[self.current_track_index]["path"] == track["path"]:
+            self.player.stop()
+            self.current_track_index = -1
         self.refresh_track_list()
         self.refresh_playlist_list()
         self.save_data()
+
+    # ==================== SAVE/LOAD ====================
 
     def save_data(self):
         data = {
