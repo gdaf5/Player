@@ -660,26 +660,30 @@ class SearchWorker(QThread):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 if self.platform == "youtube":
                     search_query = f"ytsearch10:{self.query}"
+                elif self.platform == "soundcloud":
+                    search_query = f"scsearch10:{self.query}"
                 else:
-                    search_query = f"vksearch10:{self.query}"
+                    search_query = f"ytsearch10:{self.query}"
 
                 info = ydl.extract_info(search_query, download=False)
                 if info and info.get("entries"):
                     for entry in info["entries"]:
-                        platform = self.platform
                         url = entry.get("url", "")
-                        if platform == "youtube" and entry.get("id"):
-                            url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+                        if not url and entry.get("id"):
+                            if self.platform == "youtube":
+                                url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+                            elif self.platform == "soundcloud":
+                                url = entry.get("permalink_url", f"https://soundcloud.com/{entry.get('id', '')}")
 
                         results.append({
                             "title": entry.get("title", "Unknown"),
-                            "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
+                            "uploader": entry.get("uploader", entry.get("channel", entry.get("artist", "Unknown"))),
                             "url": url,
                             "id": entry.get("id", ""),
                             "duration": entry.get("duration", 0),
                             "duration_string": entry.get("duration_string", ""),
                             "thumbnail": entry.get("thumbnail", ""),
-                            "platform": platform,
+                            "platform": self.platform,
                         })
             self.results_ready.emit(results)
         except Exception as e:
@@ -955,8 +959,8 @@ class MusicPlayer(QMainWindow):
 
         self.platform_combo = QComboBox()
         self.platform_combo.addItem("YouTube")
-        self.platform_combo.addItem("VK")
-        self.platform_combo.setFixedWidth(90)
+        self.platform_combo.addItem("SoundCloud")
+        self.platform_combo.setFixedWidth(100)
         search_layout.addWidget(self.platform_combo)
 
         self.online_search_input = QLineEdit()
@@ -1236,7 +1240,7 @@ class MusicPlayer(QMainWindow):
         if not query:
             return
 
-        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "vk"
+        platform = "youtube" if self.platform_combo.currentText() == "YouTube" else "soundcloud"
 
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
