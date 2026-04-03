@@ -32,7 +32,7 @@ from mutagen.wave import WAVE
 from mutagen.id3 import ID3
 
 
-THEMES = {
+THEMES = {5
     "Midnight": {
         "bg_primary": "#0d0d1a",
         "bg_secondary": "#151528",
@@ -662,7 +662,7 @@ def get_track_info(filepath):
         "artist": "Unknown Artist",
         "album": "Unknown Album",
         "duration": 0,
-        "cover_path": None,
+        "cover_data": None,
     }
     ext = Path(filepath).suffix.lower()
     try:
@@ -681,16 +681,13 @@ def get_track_info(filepath):
                 pass
             try:
                 tags = ID3(filepath)
-                for tag in tags.values():
-                    if tag.frameid == "APIC":
-                        cover_data = tag.data
-                        cover_path = filepath + ".cover.jpg"
-                        with open(cover_path, "wb") as f:
-                            f.write(cover_data)
-                        info["cover_path"] = cover_path
+                for key, tag in tags.items():
+                    if hasattr(tag, 'frameid') and tag.frameid == "APIC":
+                        info["cover_data"] = tag.data
                         break
-            except:
-                pass
+            except Exception as e:
+                with open(os.path.join(SCRIPT_DIR, "cover_debug.txt"), "a", encoding="utf-8") as f:
+                    f.write(f"ID3 error for {filepath}: {e}\n")
         elif ext in (".m4a", ".mp4"):
             audio = MP4(filepath)
             tags = audio.tags
@@ -699,11 +696,7 @@ def get_track_info(filepath):
                 info["artist"] = tags.get("\xa9ART", ["Unknown Artist"])[0]
                 info["album"] = tags.get("\xa9alb", ["Unknown Album"])[0]
                 if "covr" in tags:
-                    cover_data = tags["covr"][0]
-                    cover_path = filepath + ".cover.jpg"
-                    with open(cover_path, "wb") as f:
-                        f.write(cover_data)
-                    info["cover_path"] = cover_path
+                    info["cover_data"] = bytes(tags["covr"][0])
             info["duration"] = int(audio.info.length * 1000)
         elif ext == ".flac":
             audio = FLAC(filepath)
@@ -712,11 +705,7 @@ def get_track_info(filepath):
             info["album"] = audio.get("album", ["Unknown Album"])[0]
             info["duration"] = int(audio.info.length * 1000)
             if audio.pictures:
-                cover_data = audio.pictures[0].data
-                cover_path = filepath + ".cover.jpg"
-                with open(cover_path, "wb") as f:
-                    f.write(cover_data)
-                info["cover_path"] = cover_path
+                info["cover_data"] = audio.pictures[0].data
         elif ext == ".ogg":
             audio = OggVorbis(filepath)
             info["title"] = audio.get("title", [Path(filepath).stem])[0]
@@ -729,17 +718,50 @@ def get_track_info(filepath):
                 info["duration"] = int(audio.info.length * 1000)
             except:
                 pass
-    except Exception:
-        pass
+    except Exception as e:
+        with open(os.path.join(SCRIPT_DIR, "cover_debug.txt"), "a", encoding="utf-8") as f:
+            f.write(f"General error for {filepath}: {e}\n")
     return info
 
 
-def get_cover_pixmap(track, size=200):
-    cover_path = track.get("cover_path")
-    if cover_path and os.path.exists(cover_path):
-        pm = QPixmap(cover_path)
+_cover_cache = {}
+
+
+def get_cover_pixmap(track, size=70):
+    path = track.get("path", "")
+    if path in _cover_cache:
+        pm = _cover_cache[path]
+        return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation) if pm else None
+
+    cover_data = track.get("cover_data")
+    if cover_data:
+        pm = QPixmap()
+        pm.loadFromData(cover_data)
         if not pm.isNull():
+            _cover_cache[path] = pm
             return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    # Try to find cover image in the same folder
+    folder = os.path.dirname(path)
+    cover_names = ["folder.jpg", "folder.png", "cover.jpg", "cover.png", "album.jpg", "album.png", "front.jpg", "front.png", "art.jpg", "art.png"]
+    for name in cover_names:
+        cover_path = os.path.join(folder, name)
+        if os.path.exists(cover_path):
+            pm = QPixmap(cover_path)
+            if not pm.isNull():
+                _cover_cache[path] = pm
+                return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    # Try to find any jpg/png in folder that looks like cover
+    for f in os.listdir(folder):
+        if f.lower().endswith((".jpg", ".png", ".jpeg")) and not f.startswith("."):
+            fp = os.path.join(folder, f)
+            pm = QPixmap(fp)
+            if not pm.isNull():
+                _cover_cache[path] = pm
+                return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    _cover_cache[path] = None
     return None
 
 
@@ -1140,6 +1162,8 @@ class MusicPlayer(QMainWindow):
         self.repeat_mode = 0
         self.slider_pressed = False
 
+        self.music_dir = os.path.join(os.path.expanduser("~"), "Music")
+
         self.is_streaming = False
         self.stream_worker = None
         self.search_worker = None
@@ -1190,15 +1214,10 @@ class MusicPlayer(QMainWindow):
         add_btn_layout = QHBoxLayout()
         add_btn_layout.setSpacing(8)
 
-        self.add_folder_btn = QPushButton("Add Folder")
-        self.add_folder_btn.setObjectName("accent_btn")
-        self.add_folder_btn.clicked.connect(self.add_folder)
-        add_btn_layout.addWidget(self.add_folder_btn)
-
-        self.add_files_btn = QPushButton("Add Files")
-        self.add_files_btn.setObjectName("accent_btn")
-        self.add_files_btn.clicked.connect(self.add_files)
-        add_btn_layout.addWidget(self.add_files_btn)
+        self.change_music_dir_btn = QPushButton("📂 Choose Music Folder")
+        self.change_music_dir_btn.setObjectName("accent_btn")
+        self.change_music_dir_btn.clicked.connect(self.choose_music_folder)
+        add_btn_layout.addWidget(self.change_music_dir_btn)
 
         header_layout.addLayout(add_btn_layout)
         sidebar_layout.addWidget(header)
@@ -1638,38 +1657,6 @@ class MusicPlayer(QMainWindow):
 
     # ==================== LOCAL TRACKS ====================
 
-    def add_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Music Folder")
-        if folder:
-            self.scan_folder(folder)
-
-    def add_files(self):
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Music Files", "",
-            "Music Files (*.mp3 *.m4a *.mp4 *.flac *.ogg *.wav);;All Files (*.*)"
-        )
-        if files:
-            for f in files:
-                info = get_track_info(f)
-                if info["path"] not in [t["path"] for t in self.tracks]:
-                    self.tracks.append(info)
-            self.refresh_track_list()
-            self.save_data()
-
-    def scan_folder(self, folder):
-        extensions = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav"}
-        files_found = 0
-        for ext in extensions:
-            for filepath in glob.glob(os.path.join(folder, f"**/*{ext}"), recursive=True):
-                if filepath not in [t["path"] for t in self.tracks]:
-                    info = get_track_info(filepath)
-                    self.tracks.append(info)
-                    files_found += 1
-        self.refresh_track_list()
-        self.save_data()
-        if files_found > 0:
-            self.show_status(f"Added {files_found} tracks")
-
     def refresh_track_list(self):
         self.track_list.clear()
         filtered = self.get_filtered_tracks()
@@ -1698,9 +1685,8 @@ class MusicPlayer(QMainWindow):
             self.show_status(f"File not found: {track['title']}")
             return
 
-        if not track.get("cover_path"):
-            info = get_track_info(track["path"])
-            track["cover_path"] = info.get("cover_path")
+        info = get_track_info(track["path"])
+        track["cover_data"] = info.get("cover_data")
 
         self.is_streaming = False
         self.player.setSource(QUrl.fromLocalFile(track["path"]))
@@ -1718,8 +1704,9 @@ class MusicPlayer(QMainWindow):
     def update_now_playing(self, track):
         self.now_title.setText(track["title"])
         self.now_artist.setText(track["artist"])
+
         pm = get_cover_pixmap(track, 70)
-        if pm:
+        if pm and not pm.isNull():
             self.cover_label.setPixmap(pm)
             self.cover_label.setStyleSheet("border-radius: 8px; background-color: transparent;")
         else:
@@ -1986,7 +1973,7 @@ class MusicPlayer(QMainWindow):
 
     def save_data(self):
         data = {
-            "tracks": self.tracks,
+            "music_dir": self.music_dir,
             "playlists": self.playlists,
             "current_theme": self.current_theme_name,
             "volume": self.volume_slider.value(),
@@ -1998,13 +1985,23 @@ class MusicPlayer(QMainWindow):
         except Exception as e:
             print(f"Error saving config: {e}")
 
+    def scan_music_dir(self):
+        self.tracks = []
+        extensions = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav"}
+        if not os.path.isdir(self.music_dir):
+            return
+        for ext in extensions:
+            for filepath in glob.glob(os.path.join(self.music_dir, f"**/*{ext}"), recursive=True):
+                info = get_track_info(filepath)
+                self.tracks.append(info)
+
     def load_saved_data(self):
         config_path = os.path.join(SCRIPT_DIR, "config.json")
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                self.tracks = data.get("tracks", [])
+                self.music_dir = data.get("music_dir", os.path.join(os.path.expanduser("~"), "Music"))
                 self.playlists = data.get("playlists", {})
                 theme = data.get("current_theme", "Midnight")
                 self.theme_combo.setCurrentText(theme)
@@ -2014,12 +2011,19 @@ class MusicPlayer(QMainWindow):
                 self.audio_output.setVolume(vol / 100.0)
             except Exception as e:
                 print(f"Error loading config: {e}")
-        for track in self.tracks:
-            if not track.get("cover_path") and os.path.exists(track["path"]):
-                info = get_track_info(track["path"])
-                track["cover_path"] = info.get("cover_path")
+
+        self.scan_music_dir()
         self.refresh_track_list()
         self.refresh_playlist_list()
+
+    def choose_music_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Music Folder", self.music_dir)
+        if folder:
+            self.music_dir = folder
+            self.scan_music_dir()
+            self.refresh_track_list()
+            self.save_data()
+            self.show_status(f"Scanned {len(self.tracks)} tracks from {folder}")
 
     def show_status(self, message):
         self.statusBar().showMessage(message, 3000)
