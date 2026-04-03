@@ -7,20 +7,30 @@ import subprocess
 import threading
 from pathlib import Path
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
+
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+SCRIPT_DIR = get_app_dir()
+DATA_DIR = os.path.join(os.path.expanduser("~"), ".sonicwave")
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(os.path.join(SCRIPT_DIR, "gifs"), exist_ok=True)
+os.makedirs(os.path.join(DATA_DIR, "downloads"), exist_ok=True)
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QSlider,
     QFileDialog, QInputDialog, QMessageBox, QFrame, QSplitter,
-    QComboBox, QMenu, QLineEdit, QTabWidget, QStackedWidget,
-    QProgressBar,
+    QComboBox, QMenu, QLineEdit, QProgressBar,
 )
 from PyQt6.QtCore import (
     Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread,
 )
 from PyQt6.QtGui import (
-    QFont, QColor, QPixmap, QPainter, QMovie, QImage,
+    QFont, QColor, QPixmap, QPainter, QMovie,
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from mutagen.easyid3 import EasyID3
@@ -502,16 +512,6 @@ def generate_stylesheet(t):
     QPushButton#accent_btn:hover {{
         background-color: {t['accent_hover']};
     }}
-    QPushButton#download_btn {{
-        background-color: {t['success']};
-        color: {t['bg_primary']};
-        border-radius: 6px;
-        font-size: 11px;
-        padding: 4px 10px;
-    }}
-    QPushButton#download_btn:hover {{
-        opacity: 0.85;
-    }}
     QComboBox {{
         background-color: {t['bg_tertiary']};
         color: {t['text_primary']};
@@ -685,9 +685,8 @@ def get_track_info(filepath):
                     if hasattr(tag, 'frameid') and tag.frameid == "APIC":
                         info["cover_data"] = tag.data
                         break
-            except Exception as e:
-                with open(os.path.join(SCRIPT_DIR, "cover_debug.txt"), "a", encoding="utf-8") as f:
-                    f.write(f"ID3 error for {filepath}: {e}\n")
+            except:
+                pass
         elif ext in (".m4a", ".mp4"):
             audio = MP4(filepath)
             tags = audio.tags
@@ -718,9 +717,8 @@ def get_track_info(filepath):
                 info["duration"] = int(audio.info.length * 1000)
             except:
                 pass
-    except Exception as e:
-        with open(os.path.join(SCRIPT_DIR, "cover_debug.txt"), "a", encoding="utf-8") as f:
-            f.write(f"General error for {filepath}: {e}\n")
+    except Exception:
+        pass
     return info
 
 
@@ -741,9 +739,8 @@ def get_cover_pixmap(track, size=70):
             _cover_cache[path] = pm
             return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
-    # Try to find cover image in the same folder
     folder = os.path.dirname(path)
-    cover_names = ["folder.jpg", "folder.png", "cover.jpg", "cover.png", "album.jpg", "album.png", "front.jpg", "front.png", "art.jpg", "art.png"]
+    cover_names = ["folder.jpg", "folder.png", "cover.jpg", "cover.png", "album.jpg", "album.png", "front.jpg", "front.png"]
     for name in cover_names:
         cover_path = os.path.join(folder, name)
         if os.path.exists(cover_path):
@@ -752,247 +749,9 @@ def get_cover_pixmap(track, size=70):
                 _cover_cache[path] = pm
                 return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
-    # Try to find any jpg/png in folder that looks like cover
-    for f in os.listdir(folder):
-        if f.lower().endswith((".jpg", ".png", ".jpeg")) and not f.startswith("."):
-            fp = os.path.join(folder, f)
-            pm = QPixmap(fp)
-            if not pm.isNull():
-                _cover_cache[path] = pm
-                return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-
     _cover_cache[path] = None
     return None
 
-
-class TrackListItem(QListWidgetItem):
-    def __init__(self, track):
-        super().__init__()
-        self.track = track
-        self.update_display()
-
-    def update_display(self):
-        self.setText(f"{self.track['artist']} - {self.track['title']}")
-        self.setToolTip(f"{self.track['title']}\n{self.track['artist']}\n{self.track['album']}")
-
-
-class SearchListItem(QListWidgetItem):
-    def __init__(self, result):
-        super().__init__()
-        self.result = result
-        self.update_display()
-
-    def update_display(self):
-        title = self.result.get("title", "Unknown")
-        uploader = self.result.get("uploader", "Unknown")
-        duration = self.result.get("duration_string", "")
-        self.setText(f"{uploader} - {title}")
-        if duration:
-            self.setText(f"{uploader} - {title}  [{duration}]")
-        self.setToolTip(f"{title}\n{uploader}")
-
-
-class PlaylistListItem(QListWidgetItem):
-    def __init__(self, name, track_count=0):
-        super().__init__()
-        self.playlist_name = name
-        self.track_count = track_count
-        self.update_display()
-
-    def update_display(self):
-        self.setText(f"\u266a {self.playlist_name}")
-        self.setToolTip(f"{self.playlist_name} ({self.track_count} tracks)")
-
-
-def format_time(ms):
-    if ms <= 0:
-        return "0:00"
-    seconds = ms // 1000
-    minutes = seconds // 60
-    seconds = seconds % 60
-    return f"{minutes}:{seconds:02d}"
-
-
-# ==================== SEARCH THREAD ====================
-
-class SearchWorker(QThread):
-    results_ready = pyqtSignal(list)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, query, platform="youtube"):
-        super().__init__()
-        self.query = query
-        self.platform = platform
-
-    def run(self):
-        try:
-            if self.platform == "yandex":
-                self._search_yandex()
-            else:
-                self._search_ytdlp()
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def _search_ytdlp(self):
-        import yt_dlp
-        ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": True,
-            "socket_timeout": 10,
-        }
-        results = []
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            search_query = f"ytsearch10:{self.query}"
-            info = ydl.extract_info(search_query, download=False)
-            if info and info.get("entries"):
-                for entry in info["entries"]:
-                    url = entry.get("url", "")
-                    if not url and entry.get("id"):
-                        url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
-
-                    results.append({
-                        "title": entry.get("title", "Unknown"),
-                        "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
-                        "url": url,
-                        "id": entry.get("id", ""),
-                        "duration": entry.get("duration", 0),
-                        "duration_string": entry.get("duration_string", ""),
-                        "thumbnail": entry.get("thumbnail", ""),
-                        "platform": self.platform,
-                    })
-        self.results_ready.emit(results)
-
-    def _search_yandex(self):
-        import yt_dlp
-        ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": True,
-            "socket_timeout": 10,
-        }
-        results = []
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            search_query = f"ymsearch10:{self.query}"
-            info = ydl.extract_info(search_query, download=False)
-            if info and info.get("entries"):
-                for entry in info["entries"]:
-                    results.append({
-                        "title": entry.get("title", "Unknown"),
-                        "uploader": entry.get("artist", entry.get("uploader", "Unknown")),
-                        "url": entry.get("url", entry.get("webpage_url", "")),
-                        "id": entry.get("id", ""),
-                        "duration": entry.get("duration", 0),
-                        "duration_string": entry.get("duration_string", ""),
-                        "thumbnail": entry.get("thumbnail", ""),
-                        "platform": "yandex",
-                    })
-        self.results_ready.emit(results)
-
-
-class StreamWorker(QThread):
-    stream_ready = pyqtSignal(str)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, url, result=None):
-        super().__init__()
-        self.url = url
-        self.result = result or {}
-
-    def run(self):
-        try:
-            if self.result.get("platform") == "vk" and self.result.get("direct_url"):
-                self.stream_ready.emit(self.result["direct_url"])
-            else:
-                import yt_dlp
-                ydl_opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "format": "bestaudio/best",
-                    "socket_timeout": 10,
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(self.url, download=False)
-                    stream_url = info.get("url", "")
-                    if stream_url:
-                        self.stream_ready.emit(stream_url)
-                    else:
-                        self.error_occurred.emit("No stream URL found")
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-
-class DownloadWorker(QThread):
-    download_complete = pyqtSignal(str)
-    download_progress = pyqtSignal(int)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, url, save_dir, result=None):
-        super().__init__()
-        self.url = url
-        self.save_dir = save_dir
-        self.result = result or {}
-
-    def run(self):
-        try:
-            os.makedirs(self.save_dir, exist_ok=True)
-
-            if self.result.get("platform") == "vk" and self.result.get("direct_url"):
-                self._download_vk()
-            else:
-                self._download_ytdlp()
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def _download_vk(self):
-        import urllib.request
-        title = self.result.get("title", "track")
-        safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
-        out_path = os.path.join(self.save_dir, f"{safe_title}.mp3")
-        req = urllib.request.Request(self.result["direct_url"], headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            total = resp.getheader("Content-Length")
-            total = int(total) if total else 0
-            downloaded = 0
-            with open(out_path, "wb") as f:
-                while True:
-                    chunk = resp.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if total > 0:
-                        self.download_progress.emit(int(downloaded / total * 100))
-        self.download_complete.emit(title)
-
-    def _download_ytdlp(self):
-        import yt_dlp
-        ydl_opts = {
-            "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
-            "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
-            "quiet": True,
-            "no_warnings": True,
-            "socket_timeout": 10,
-            "progress_hooks": [self._progress_hook],
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(self.url, download=True)
-            title = info.get("title", "downloaded")
-            self.download_complete.emit(title)
-
-    def _progress_hook(self, d):
-        if d["status"] == "downloading":
-            pct = d.get("_percent_str", "0%")
-            try:
-                val = float(pct.strip("%"))
-                self.download_progress.emit(int(val))
-            except:
-                pass
-
-
-# ==================== GIF PANEL ====================
 
 class MarqueeLabel(QLabel):
     def __init__(self, text="", parent=None):
@@ -1001,7 +760,6 @@ class MarqueeLabel(QLabel):
         self._full_text = text
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._paused = False
         self._scrolling = False
 
     def setText(self, text):
@@ -1012,8 +770,6 @@ class MarqueeLabel(QLabel):
         super().setText(text)
 
     def _tick(self):
-        if self._paused:
-            return
         self._offset += 1
         if self._offset > len(self._full_text):
             self._offset = 0
@@ -1142,6 +898,196 @@ class GifPanel(QWidget):
                 self.gif_label.setPixmap(scaled)
 
 
+class TrackListItem(QListWidgetItem):
+    def __init__(self, track):
+        super().__init__()
+        self.track = track
+        self.update_display()
+
+    def update_display(self):
+        self.setText(f"{self.track['artist']} - {self.track['title']}")
+        self.setToolTip(f"{self.track['title']}\n{self.track['artist']}\n{self.track['album']}")
+
+
+class SearchListItem(QListWidgetItem):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+        self.update_display()
+
+    def update_display(self):
+        title = self.result.get("title", "Unknown")
+        uploader = self.result.get("uploader", "Unknown")
+        duration = self.result.get("duration_string", "")
+        if duration:
+            self.setText(f"{uploader} - {title}  [{duration}]")
+        else:
+            self.setText(f"{uploader} - {title}")
+        self.setToolTip(f"{title}\n{uploader}")
+
+
+class PlaylistListItem(QListWidgetItem):
+    def __init__(self, name, track_count=0):
+        super().__init__()
+        self.playlist_name = name
+        self.track_count = track_count
+        self.update_display()
+
+    def update_display(self):
+        self.setText(f"\u266a {self.playlist_name}")
+        self.setToolTip(f"{self.playlist_name} ({self.track_count} tracks)")
+
+
+def format_time(ms):
+    if ms <= 0:
+        return "0:00"
+    seconds = ms // 1000
+    minutes = seconds // 60
+    seconds = seconds % 60
+    return f"{minutes}:{seconds:02d}"
+
+
+# ==================== SEARCH / STREAM / DOWNLOAD THREADS ====================
+
+class SearchWorker(QThread):
+    results_ready = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, query, platform="youtube"):
+        super().__init__()
+        self.query = query
+        self.platform = platform
+
+    def run(self):
+        try:
+            if self.platform == "soundcloud":
+                self._search_soundcloud()
+            else:
+                self._search_youtube()
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _search_youtube(self):
+        import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "socket_timeout": 10,
+        }
+        results = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch10:{self.query}", download=False)
+            if info and info.get("entries"):
+                for entry in info["entries"]:
+                    url = f"https://www.youtube.com/watch?v={entry.get('id', '')}" if entry.get("id") else ""
+                    results.append({
+                        "title": entry.get("title", "Unknown"),
+                        "uploader": entry.get("uploader", entry.get("channel", "Unknown")),
+                        "url": url,
+                        "id": entry.get("id", ""),
+                        "duration": entry.get("duration", 0),
+                        "duration_string": entry.get("duration_string", ""),
+                        "thumbnail": entry.get("thumbnail", ""),
+                        "platform": "youtube",
+                    })
+        self.results_ready.emit(results)
+
+    def _search_soundcloud(self):
+        import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "socket_timeout": 10,
+        }
+        results = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"scsearch10:{self.query}", download=False)
+            if info and info.get("entries"):
+                for entry in info["entries"]:
+                    results.append({
+                        "title": entry.get("title", "Unknown"),
+                        "uploader": entry.get("uploader", entry.get("artist", "Unknown")),
+                        "url": entry.get("permalink_url", entry.get("url", "")),
+                        "id": entry.get("id", ""),
+                        "duration": entry.get("duration", 0),
+                        "duration_string": entry.get("duration_string", ""),
+                        "thumbnail": entry.get("thumbnail", ""),
+                        "platform": "soundcloud",
+                    })
+        self.results_ready.emit(results)
+
+
+class StreamWorker(QThread):
+    stream_ready = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, url, result=None):
+        super().__init__()
+        self.url = url
+        self.result = result or {}
+
+    def run(self):
+        try:
+            import yt_dlp
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestaudio/best",
+                "socket_timeout": 10,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+                stream_url = info.get("url", "")
+                if stream_url:
+                    self.stream_ready.emit(stream_url)
+                else:
+                    self.error_occurred.emit("No stream URL found")
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+
+class DownloadWorker(QThread):
+    download_complete = pyqtSignal(str)
+    download_progress = pyqtSignal(int)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, url, save_dir, result=None):
+        super().__init__()
+        self.url = url
+        self.save_dir = save_dir
+        self.result = result or {}
+
+    def run(self):
+        try:
+            os.makedirs(self.save_dir, exist_ok=True)
+            import yt_dlp
+            ydl_opts = {
+                "outtmpl": os.path.join(self.save_dir, "%(title)s.%(ext)s"),
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
+                "quiet": True,
+                "no_warnings": True,
+                "socket_timeout": 10,
+                "progress_hooks": [self._progress_hook],
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.url, download=True)
+                title = info.get("title", "downloaded")
+                self.download_complete.emit(title)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _progress_hook(self, d):
+        if d["status"] == "downloading":
+            pct = d.get("_percent_str", "0%")
+            try:
+                val = float(pct.strip("%"))
+                self.download_progress.emit(int(val))
+            except:
+                pass
+
+
 # ==================== MAIN WINDOW ====================
 
 class MusicPlayer(QMainWindow):
@@ -1170,7 +1116,7 @@ class MusicPlayer(QMainWindow):
         self.download_worker = None
         self.search_results = []
 
-        self.download_dir = os.path.join(SCRIPT_DIR, "downloads")
+        self.download_dir = os.path.join(DATA_DIR, "downloads")
         os.makedirs(self.download_dir, exist_ok=True)
 
         self.player = QMediaPlayer()
@@ -1233,8 +1179,9 @@ class MusicPlayer(QMainWindow):
 
         self.platform_combo = QComboBox()
         self.platform_combo.addItem("YouTube")
+        self.platform_combo.addItem("SoundCloud")
         self.platform_combo.addItem("URL")
-        self.platform_combo.setFixedWidth(100)
+        self.platform_combo.setFixedWidth(110)
         self.platform_combo.currentTextChanged.connect(self.on_platform_changed)
         search_layout.addWidget(self.platform_combo)
 
@@ -1371,7 +1318,7 @@ class MusicPlayer(QMainWindow):
         player_bar_row.setContentsMargins(20, 8, 20, 8)
         player_bar_row.setSpacing(0)
 
-        # === LEFT: cover + info (fixed 350px, never grows) ===
+        # LEFT: cover + info (fixed 350px)
         left_widget = QWidget()
         left_widget.setFixedWidth(350)
         left_layout = QHBoxLayout(left_widget)
@@ -1412,7 +1359,7 @@ class MusicPlayer(QMainWindow):
         left_layout.addWidget(info_widget)
         player_bar_row.addWidget(left_widget)
 
-        # === CENTER: controls + progress (takes all remaining space) ===
+        # CENTER: controls + progress
         center_widget = QWidget()
         center_layout = QVBoxLayout(center_widget)
         center_layout.setContentsMargins(10, 0, 10, 0)
@@ -1474,7 +1421,7 @@ class MusicPlayer(QMainWindow):
         center_layout.addLayout(progress_layout)
         player_bar_row.addWidget(center_widget, 1)
 
-        # === RIGHT: volume (fixed 150px, never grows) ===
+        # RIGHT: volume (fixed 150px)
         right_widget = QWidget()
         right_widget.setFixedWidth(150)
         right_layout = QHBoxLayout(right_widget)
@@ -1514,7 +1461,7 @@ class MusicPlayer(QMainWindow):
         self.now_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {self.theme['text_primary']};")
         self.now_artist.setStyleSheet(f"font-size: 12px; color: {self.theme['text_secondary']};")
         self.time_current.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px;")
-        self.time_total.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px; text-align: right;")
+        self.time_total.setStyleSheet(f"color: {self.theme['text_secondary']}; font-size: 11px; min-width: 40px;")
         self.track_count_label.setStyleSheet(f"color: {self.theme['text_muted']}; font-size: 11px; padding: 0 15px 10px;")
         self.current_view_title.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {self.theme['text_primary']};")
 
@@ -1527,11 +1474,12 @@ class MusicPlayer(QMainWindow):
                 }}
             """)
 
-    # ==================== ONLINE SEARCH ====================
-
     def on_platform_changed(self):
-        if self.platform_combo.currentText() == "URL":
-            self.online_search_input.setPlaceholderText("Paste URL (YouTube, Yandex, VK...)")
+        mode = self.platform_combo.currentText()
+        if mode == "URL":
+            self.online_search_input.setPlaceholderText("Paste URL (YouTube, SoundCloud, VK...)")
+        elif mode == "SoundCloud":
+            self.online_search_input.setPlaceholderText("Search SoundCloud...")
         else:
             self.online_search_input.setPlaceholderText("Search YouTube...")
 
@@ -1544,6 +1492,8 @@ class MusicPlayer(QMainWindow):
             self.play_url(query)
             return
 
+        platform = "soundcloud" if self.platform_combo.currentText() == "SoundCloud" else "youtube"
+
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
         self.search_results_list.clear()
@@ -1552,18 +1502,16 @@ class MusicPlayer(QMainWindow):
         if self.search_worker and self.search_worker.isRunning():
             self.search_worker.terminate()
 
-        self.search_worker = SearchWorker(query, "youtube")
+        self.search_worker = SearchWorker(query, platform)
         self.search_worker.results_ready.connect(self.on_search_results)
         self.search_worker.error_occurred.connect(self.on_search_error)
         self.search_worker.start()
 
     def play_url(self, url):
         self.statusBar().showMessage(f"Loading: {url}...")
-
         if self.stream_worker and self.stream_worker.isRunning():
             self.stream_worker.terminate()
-
-        self.stream_worker = StreamWorker(url, {"platform": "yt"})
+        self.stream_worker = StreamWorker(url, {"platform": "url"})
         self.stream_worker.stream_ready.connect(self.on_stream_ready)
         self.stream_worker.error_occurred.connect(self.on_stream_error)
         self.stream_worker.start()
@@ -1584,10 +1532,8 @@ class MusicPlayer(QMainWindow):
     def play_search_result(self, item):
         result = item.result
         self.statusBar().showMessage(f"Loading stream: {result['title']}...")
-
         if self.stream_worker and self.stream_worker.isRunning():
             self.stream_worker.terminate()
-
         self.stream_worker = StreamWorker(result["url"], result)
         self.stream_worker.stream_ready.connect(self.on_stream_ready)
         self.stream_worker.error_occurred.connect(self.on_stream_error)
@@ -1598,9 +1544,8 @@ class MusicPlayer(QMainWindow):
         self.player.setSource(QUrl(stream_url))
         self.player.play()
         self.current_track_index = -1
-
-        self.now_title.setText(self.search_results[0]["title"] if self.search_results else "Streaming")
-        self.now_artist.setText("Online Stream")
+        self.now_title.setText("Online Stream")
+        self.now_artist.setText("Streaming...")
         self.gif_panel.play_random_gif()
         self.statusBar().showMessage("Streaming...")
 
@@ -1612,14 +1557,11 @@ class MusicPlayer(QMainWindow):
         item = self.search_results_list.itemAt(pos)
         if not item:
             return
-
         menu = QMenu(self)
         play = menu.addAction("Play")
         play.triggered.connect(lambda: self.play_search_result(item))
-
         download = menu.addAction("Download")
         download.triggered.connect(lambda: self.download_search_result(item))
-
         menu.exec(self.search_results_list.mapToGlobal(pos))
 
     def download_search_result(self, item):
@@ -1627,10 +1569,8 @@ class MusicPlayer(QMainWindow):
         self.statusBar().showMessage(f"Downloading: {result['title']}...")
         self.search_progress.setVisible(True)
         self.search_progress.setValue(0)
-
         if self.download_worker and self.download_worker.isRunning():
             self.download_worker.terminate()
-
         self.download_worker = DownloadWorker(result["url"], self.download_dir, result)
         self.download_worker.download_complete.connect(self.on_download_complete)
         self.download_worker.download_progress.connect(self.search_progress.setValue)
@@ -1640,14 +1580,7 @@ class MusicPlayer(QMainWindow):
     def on_download_complete(self, title):
         self.search_progress.setVisible(False)
         self.statusBar().showMessage(f"Downloaded: {title}")
-
-        # Scan downloads folder
-        for ext in (".mp3", ".m4a", ".flac", ".ogg", ".wav"):
-            for filepath in glob.glob(os.path.join(self.download_dir, f"*{ext}")):
-                info = get_track_info(filepath)
-                if info["path"] not in [t["path"] for t in self.tracks]:
-                    self.tracks.append(info)
-
+        self.scan_music_dir()
         self.refresh_track_list()
         self.save_data()
 
@@ -1656,6 +1589,16 @@ class MusicPlayer(QMainWindow):
         self.statusBar().showMessage(f"Download error: {error}")
 
     # ==================== LOCAL TRACKS ====================
+
+    def scan_music_dir(self):
+        self.tracks = []
+        extensions = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav"}
+        if not os.path.isdir(self.music_dir):
+            return
+        for ext in extensions:
+            for filepath in glob.glob(os.path.join(self.music_dir, f"**/*{ext}"), recursive=True):
+                info = get_track_info(filepath)
+                self.tracks.append(info)
 
     def refresh_track_list(self):
         self.track_list.clear()
@@ -1704,7 +1647,6 @@ class MusicPlayer(QMainWindow):
     def update_now_playing(self, track):
         self.now_title.setText(track["title"])
         self.now_artist.setText(track["artist"])
-
         pm = get_cover_pixmap(track, 70)
         if pm and not pm.isNull():
             self.cover_label.setPixmap(pm)
@@ -1962,7 +1904,7 @@ class MusicPlayer(QMainWindow):
         for pl in self.playlists.values():
             if track["path"] in pl:
                 pl.remove(track["path"])
-        if self.current_track_index >= 0 and self.tracks[self.current_track_index]["path"] == track["path"]:
+        if self.current_track_index >= 0 and self.tracks and self.tracks[self.current_track_index]["path"] == track["path"]:
             self.player.stop()
             self.current_track_index = -1
         self.refresh_track_list()
@@ -1978,25 +1920,15 @@ class MusicPlayer(QMainWindow):
             "current_theme": self.current_theme_name,
             "volume": self.volume_slider.value(),
         }
-        config_path = os.path.join(SCRIPT_DIR, "config.json")
+        config_path = os.path.join(DATA_DIR, "config.json")
         try:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"Error saving config: {e}")
 
-    def scan_music_dir(self):
-        self.tracks = []
-        extensions = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav"}
-        if not os.path.isdir(self.music_dir):
-            return
-        for ext in extensions:
-            for filepath in glob.glob(os.path.join(self.music_dir, f"**/*{ext}"), recursive=True):
-                info = get_track_info(filepath)
-                self.tracks.append(info)
-
     def load_saved_data(self):
-        config_path = os.path.join(SCRIPT_DIR, "config.json")
+        config_path = os.path.join(DATA_DIR, "config.json")
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
