@@ -32,7 +32,7 @@ from mutagen.wave import WAVE
 from mutagen.id3 import ID3
 
 
-THEMES = {5
+THEMES = {
     "Midnight": {
         "bg_primary": "#0d0d1a",
         "bg_secondary": "#151528",
