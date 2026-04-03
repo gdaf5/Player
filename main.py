@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import json
 import glob
@@ -15,7 +15,7 @@ def get_app_dir():
 
 
 SCRIPT_DIR = get_app_dir()
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".sonicwave")
+DATA_DIR = os.path.join(os.path.expanduser("~"), ".MalwareConfinement")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(os.path.join(SCRIPT_DIR, "gifs"), exist_ok=True)
 os.makedirs(os.path.join(DATA_DIR, "downloads"), exist_ok=True)
@@ -1093,7 +1093,7 @@ class DownloadWorker(QThread):
 class MusicPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SonicWave Player")
+        self.setWindowTitle("Malware Confinement")
         self.setMinimumSize(1200, 700)
         self.resize(1300, 750)
 
@@ -1153,14 +1153,14 @@ class MusicPlayer(QMainWindow):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(15, 20, 15, 15)
 
-        self.app_title = QLabel("SonicWave")
+        self.app_title = QLabel("Malware Confinement")
         self.app_title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {self.theme['accent']}; padding: 5px 0;")
         header_layout.addWidget(self.app_title)
 
         add_btn_layout = QHBoxLayout()
         add_btn_layout.setSpacing(8)
 
-        self.change_music_dir_btn = QPushButton("📂 Choose Music Folder")
+        self.change_music_dir_btn = QPushButton("рџ“‚ Choose Music Folder")
         self.change_music_dir_btn.setObjectName("accent_btn")
         self.change_music_dir_btn.clicked.connect(self.choose_music_folder)
         add_btn_layout.addWidget(self.change_music_dir_btn)
@@ -1964,7 +1964,7 @@ class MusicPlayer(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setApplicationName("SonicWave Player")
+    app.setApplicationName("Malware Confinement")
 
     window = MusicPlayer()
     window.show()
@@ -1976,3 +1976,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

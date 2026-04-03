@@ -1,11 +1,10 @@
 __pycache__/
 *.pyc
 *.pyo
-*.json
-output*.txt
-result*.txt
-test_output.txt
-run_output.txt
-error.txt
-error_log.txt
 *.log
+build/
+dist/
+*.spec
+.cover_debug.txt
+downloads/
+
