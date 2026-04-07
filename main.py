@@ -41,6 +41,42 @@ from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
 from mutagen.id3 import ID3
 
+# Windows Audio Control
+try:
+    from ctypes import cast, POINTER
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    PYCAW_AVAILABLE = True
+except ImportError:
+    PYCAW_AVAILABLE = False
+
+
+def get_system_volume():
+    """Get current system volume (0.0 - 1.0)"""
+    if not PYCAW_AVAILABLE:
+        return None
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = cast(interface, POINTER(IAudioEndpointVolume))
+        return volume.GetMasterVolumeLevelScalar()
+    except:
+        return None
+
+
+def set_system_volume(level):
+    """Set system volume (0.0 - 1.0)"""
+    if not PYCAW_AVAILABLE:
+        return False
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = cast(interface, POINTER(IAudioEndpointVolume))
+        volume.SetMasterVolumeLevelScalar(level, None)
+        return True
+    except:
+        return False
+
 
 THEMES = {
     "Midnight": {
@@ -2029,13 +2065,21 @@ class MusicPlayer(QMainWindow):
             self.volume_btn.setText("\U0001f507")
 
     def change_volume(self, value):
+        # Set Qt player volume
         self.audio_output.setVolume(value / 100.0)
+        
+        # Sync with system volume (only for default device)
+        if PYCAW_AVAILABLE:
+            set_system_volume(value / 100.0)
+        
+        # Update volume icon
         if value == 0:
             self.volume_btn.setText("\U0001f507")
         elif value < 50:
             self.volume_btn.setText("\U0001f509")
         else:
             self.volume_btn.setText("\U0001f50a")
+        
         self.statusBar().showMessage(f"Volume: {value}%", 1000)
 
     def refresh_audio_devices(self):
@@ -2081,6 +2125,9 @@ class MusicPlayer(QMainWindow):
             self.player.setAudioOutput(new_output)
             self.audio_output = new_output
             old_output.deleteLater()
+            
+            # NOTE: Do NOT sync system volume here - pycaw controls default device only
+            # User should use player slider for non-default devices
             
             # Restore playback state
             if was_playing and current_source.isValid():
@@ -2286,6 +2333,10 @@ class MusicPlayer(QMainWindow):
                 vol = data.get("volume", 70)
                 self.volume_slider.setValue(vol)
                 self.audio_output.setVolume(vol / 100.0)
+                
+                # Sync system volume on startup
+                if PYCAW_AVAILABLE:
+                    set_system_volume(vol / 100.0)
             except Exception as e:
                 print(f"Error loading config: {e}")
 
