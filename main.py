@@ -27,10 +27,11 @@ from PyQt6.QtWidgets import (
     QComboBox, QMenu, QLineEdit, QProgressBar, QDialog, QGridLayout,
 )
 from PyQt6.QtCore import (
-    Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread,
+    Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread, QRect,
 )
 from PyQt6.QtGui import (
-    QFont, QColor, QPixmap, QPainter, QMovie,
+    QFont, QColor, QPixmap, QPainter, QMovie, QPen, QBrush,
+    QLinearGradient, QRadialGradient, QPointF,
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 from mutagen.easyid3 import EasyID3
@@ -974,6 +975,259 @@ class PlaylistListItem(QListWidgetItem):
         self.setToolTip(f"{self.playlist_name} ({self.track_count} tracks)")
 
 
+class RainVisualizerWidget(QWidget):
+    """Beautiful rain effect visualizer widget"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.setMinimumHeight(150)
+        self.setMaximumHeight(250)
+        self.setStyleSheet("background-color: transparent;")
+        
+        # Rain drop parameters
+        self.raindrops = []
+        self.max_drops = 100
+        self.gravity = 0.5
+        self.wind = 0.3
+        
+        # Initialize raindrops
+        for _ in range(self.max_drops):
+            self.raindrops.append({
+                'x': random.uniform(0, 800),
+                'y': random.uniform(-200, 200),
+                'speed': random.uniform(8, 15),
+                'length': random.uniform(10, 25),
+                'opacity': random.uniform(100, 200),
+                'width': random.uniform(1, 2.5)
+            })
+        
+        self.splash_drops = []  # Splashes when rain hits bottom
+        
+    def paintEvent(self, event):
+        """Paint the beautiful rain effect"""
+        if not self.parent_window:
+            return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Get theme colors
+        theme = self.parent_window.theme
+        accent_color = QColor(theme['accent'])
+        bg_color = QColor(theme['bg_secondary'])
+        
+        # Create gradient background
+        gradient_bg = QBrush(QColor(theme['bg_primary']))
+        painter.fillRect(self.rect(), gradient_bg)
+        
+        # Draw subtle grid overlay
+        grid_color = QColor(theme['border'])
+        grid_color.setAlpha(30)
+        pen = QPen(grid_color, 1, Qt.PenStyle.SolidLine)
+        painter.setPen(pen)
+        
+        # Horizontal lines
+        num_h_lines = 8
+        height = self.height()
+        width = self.width()
+        for i in range(num_h_lines + 1):
+            y = int(height / num_h_lines * i)
+            painter.drawLine(0, y, width, y)
+        
+        # Vertical lines
+        num_v_lines = 20
+        for i in range(num_v_lines + 1):
+            x = int(width / num_v_lines * i)
+            painter.drawLine(x, 0, x, height)
+        
+        # Update and draw raindrops
+        for drop in self.raindrops:
+            # Update position
+            drop['y'] += drop['speed']
+            drop['x'] += self.wind
+            
+            # Wrap around screen
+            if drop['y'] > height:
+                drop['y'] = -drop['length']
+                drop['x'] = random.uniform(-50, width + 50)
+                
+                # Create splash effect
+                self.create_splash(drop['x'], height)
+            
+            if drop['x'] > width + 50:
+                drop['x'] = -50
+            elif drop['x'] < -50:
+                drop['x'] = width + 50
+            
+            # Draw raindrop with gradient
+            start_y = drop['y'] - drop['length']
+            end_y = drop['y']
+            
+            # Create gradient for raindrop
+            gradient = QLinearGradient(drop['x'], start_y, drop['x'], end_y)
+            
+            # Use accent color with varying opacity
+            top_color = QColor(accent_color)
+            top_color.setAlpha(int(drop['opacity'] * 0.3))
+            bottom_color = QColor(accent_color)
+            bottom_color.setAlpha(int(drop['opacity']))
+            
+            gradient.setColorAt(0, top_color)
+            gradient.setColorAt(1, bottom_color)
+            
+            painter.setBrush(QBrush(gradient))
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            # Draw elongated drop
+            drop_rect = QRectF(
+                drop['x'] - drop['width'] / 2,
+                start_y,
+                drop['width'],
+                drop['length']
+            )
+            painter.drawRoundedRect(drop_rect, 2, 2)
+        
+        # Draw splash effects at bottom
+        self.update_and_draw_splashes(painter, height, accent_color)
+        
+        # Add subtle glow effect at bottom
+        glow_gradient = QRadialGradient(width / 2, height, height * 0.8)
+        glow_color = QColor(accent_color)
+        glow_color.setAlpha(40)
+        glow_gradient.setColorAt(0, glow_color)
+        glow_gradient.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.setBrush(QBrush(glow_gradient))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(0, height - int(height * 0.3), width, int(height * 0.3))
+        
+        painter.end()
+    
+    def create_splash(self, x, y):
+        """Create splash effect when raindrop hits bottom"""
+        num_splash_particles = random.randint(3, 6)
+        for _ in range(num_splash_particles):
+            self.splash_drops.append({
+                'x': x + random.uniform(-5, 5),
+                'y': y - 2,
+                'vx': random.uniform(-2, 2),
+                'vy': random.uniform(-3, -1),
+                'life': 1.0,
+                'size': random.uniform(1.5, 3)
+            })
+    
+    def update_and_draw_splashes(self, painter, height, accent_color):
+        """Update and draw splash particles"""
+        i = 0
+        while i < len(self.splash_drops):
+            splash = self.splash_drops[i]
+            
+            # Update physics
+            splash['x'] += splash['vx']
+            splash['y'] += splash['vy']
+            splash['vy'] += 0.15  # Gravity
+            splash['life'] -= 0.05
+            
+            if splash['life'] <= 0 or splash['y'] > height:
+                self.splash_drops.pop(i)
+                continue
+            
+            # Draw splash particle
+            splash_color = QColor(accent_color)
+            splash_color.setAlpha(int(splash['life'] * 180))
+            
+            painter.setBrush(QBrush(splash_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            painter.drawEllipse(
+                QPointF(splash['x'], splash['y']),
+                splash['size'] * splash['life'],
+                splash['size'] * splash['life']
+            )
+            i += 1
+    
+    def update_animation(self):
+        """Trigger repaint for animation"""
+        self.update()
+
+
+class RetroVisualizerWidget(QWidget):
+    """Retro-style audio visualizer widget with 64 frequency bars"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.setMinimumHeight(80)
+        self.setMaximumHeight(120)
+        self.setStyleSheet("background-color: transparent;")
+    
+    def paintEvent(self, event):
+        """Paint the retro visualizer with animated bars and grid"""
+        if not self.parent_window or not hasattr(self.parent_window, 'retro_bars'):
+            return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Get theme colors
+        theme = self.parent_window.theme
+        accent_color = QColor(theme['accent'])
+        bg_color = QColor(theme['bg_secondary'])
+        grid_color = QColor(theme['border'])
+        
+        # Set background
+        painter.fillRect(self.rect(), bg_color)
+        
+        # Draw retro grid (dotted lines)
+        pen = QPen(grid_color, 1, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        
+        # Horizontal grid lines
+        num_h_lines = 5
+        height = self.height()
+        for i in range(num_h_lines + 1):
+            y = int(height / num_h_lines * i)
+            painter.drawLine(0, y, self.width(), y)
+        
+        # Vertical grid lines
+        num_v_lines = 16
+        width = self.width()
+        for i in range(num_v_lines + 1):
+            x = int(width / num_v_lines * i)
+            painter.drawLine(x, 0, x, height)
+        
+        # Draw 64 frequency bars
+        bars = self.parent_window.retro_bars
+        num_bars = len(bars)
+        bar_width = max(3, (width - 20) / num_bars - 1)
+        spacing = (width - 20 - bar_width * num_bars) / (num_bars - 1) if num_bars > 1 else 0
+        
+        max_bar_height = height - 20
+        
+        for i in range(num_bars):
+            # Calculate bar position
+            x = int(10 + i * (bar_width + spacing))
+            
+            # Calculate bar height based on value
+            bar_height = int(bars[i] * max_bar_height)
+            y = height - 10 - bar_height
+            
+            # Create gradient-like effect with transparency
+            bar_color = QColor(accent_color)
+            alpha = int(150 + 105 * bars[i])  # Dynamic transparency based on height
+            bar_color.setAlpha(alpha)
+            
+            # Draw rounded rectangle bar
+            bar_rect = QRect(x, y, int(bar_width), bar_height)
+            painter.setBrush(QBrush(bar_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            # Draw bar with rounded top
+            painter.drawRoundedRect(bar_rect, 3, 3)
+        
+        painter.end()
+
+
 def format_time(ms):
     if ms <= 0:
         return "0:00"
@@ -1390,6 +1644,17 @@ class MusicPlayer(QMainWindow):
 
         self.eq_dialog = None
 
+        # Retro visualizer state
+        self.retro_mode = False
+        self.retro_bars = [0] * 64  # 64 frequency bars
+        self.reto_timer = QTimer()
+        self.reto_timer.timeout.connect(self.update_retro_visualizer)
+        
+        # Rain visualizer state
+        self.rain_mode = False
+        self.rain_timer = QTimer()
+        self.rain_timer.timeout.connect(self.update_rain_visualizer)
+
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
@@ -1734,6 +1999,24 @@ class MusicPlayer(QMainWindow):
         self.eq_btn.clicked.connect(self.open_equalizer)
         device_row.addWidget(self.eq_btn)
 
+        # Retro mode button (录像)
+        self.retro_btn = QPushButton("录像")
+        self.retro_btn.setObjectName("small_btn")
+        self.retro_btn.setFixedWidth(40)
+        self.retro_btn.setFixedHeight(28)
+        self.retro_btn.setToolTip("Retro Visualizer Mode")
+        self.retro_btn.clicked.connect(self.toggle_retro_mode)
+        device_row.addWidget(self.retro_btn)
+        
+        # Rain mode button (雨)
+        self.rain_btn = QPushButton("雨")
+        self.rain_btn.setObjectName("small_btn")
+        self.rain_btn.setFixedWidth(40)
+        self.rain_btn.setFixedHeight(28)
+        self.rain_btn.setToolTip("Rain Visualizer Effect")
+        self.rain_btn.clicked.connect(self.toggle_rain_mode)
+        device_row.addWidget(self.rain_btn)
+
         right_layout.addLayout(device_row)
 
         # Volume row
@@ -1759,6 +2042,18 @@ class MusicPlayer(QMainWindow):
 
         player_bar_main.addLayout(player_bar_row)
         main_layout.addWidget(self.player_bar)
+
+        # Retro visualizer widget (hidden by default, appears above player bar when enabled)
+        self.retro_visualizer = RetroVisualizerWidget(self)
+        self.retro_visualizer.setMaximumHeight(120)
+        self.retro_visualizer.setVisible(False)
+        main_layout.insertWidget(0, self.retro_visualizer)  # Insert at top of main layout, before splitter
+        
+        # Rain visualizer widget (hidden by default, appears above player bar when enabled)
+        self.rain_visualizer = RainVisualizerWidget(self)
+        self.rain_visualizer.setMaximumHeight(250)
+        self.rain_visualizer.setVisible(False)
+        main_layout.insertWidget(1, self.rain_visualizer)  # Insert after retro visualizer
 
         self.refresh_audio_devices()
 
@@ -2148,6 +2443,74 @@ class MusicPlayer(QMainWindow):
         self.eq_dialog.show()
         self.eq_dialog.raise_()
         self.eq_dialog.activateWindow()
+
+    def toggle_retro_mode(self):
+        """Toggle retro visualizer mode on/off"""
+        self.retro_mode = not self.retro_mode
+        if self.retro_mode:
+            self.retro_btn.setStyleSheet(f"background-color: {self.theme['accent']}; color: {self.theme['text_primary']}; border-radius: 6px; font-weight: bold;")
+            self.retro_visualizer.setVisible(True)
+            self.reto_timer.start(50)  # 20 FPS (50ms)
+        else:
+            self.retro_btn.setStyleSheet("")
+            self.retro_visualizer.setVisible(False)
+            self.reto_timer.stop()
+    
+    def toggle_rain_mode(self):
+        """Toggle rain visualizer effect on/off"""
+        self.rain_mode = not self.rain_mode
+        if self.rain_mode:
+            self.rain_btn.setStyleSheet(f"background-color: {self.theme['accent']}; color: {self.theme['text_primary']}; border-radius: 6px; font-weight: bold;")
+            self.rain_visualizer.setVisible(True)
+            self.rain_timer.start(50)  # 20 FPS (50ms)
+        else:
+            self.rain_btn.setStyleSheet("")
+            self.rain_visualizer.setVisible(False)
+            self.rain_timer.stop()
+
+    def update_retro_visualizer(self):
+        """Update retro visualizer with pseudo-audio data based on playback position"""
+        if not self.retro_mode:
+            return
+        
+        # Generate pseudo-audio data based on playback position
+        position = self.player.position()
+        duration = self.player.duration()
+        
+        # Create dynamic bar heights using sine waves and noise
+        import math
+        for i in range(64):
+            # Base frequency component
+            base_freq = (i + 1) * 0.1
+            time_factor = position / 1000.0  # Convert to seconds
+            
+            # Multiple sine waves for complex pattern
+            wave1 = math.sin(time_factor * base_freq * 2)
+            wave2 = math.sin(time_factor * base_freq * 3 + i * 0.1)
+            wave3 = math.cos(time_factor * base_freq * 0.5 + i * 0.2)
+            
+            # Combine waves with different weights
+            combined = (wave1 * 0.5 + wave2 * 0.3 + wave3 * 0.2)
+            
+            # Add some pseudo-randomness based on position
+            noise = ((position // (100 + i * 10)) % 100) / 100.0 - 0.5
+            
+            # Calculate final bar height (0-1 range)
+            height = max(0, min(1, (combined + noise + 0.5) * 0.8))
+            
+            # Smooth transitions
+            self.retro_bars[i] = self.retro_bars[i] * 0.7 + height * 0.3
+        
+        # Trigger visualizer repaint
+        self.retro_visualizer.update()
+    
+    def update_rain_visualizer(self):
+        """Update rain visualizer animation"""
+        if not self.rain_mode:
+            return
+        
+        # Trigger rain visualizer repaint
+        self.rain_visualizer.update_animation()
 
     def on_position_changed(self, position):
         if not self.slider_pressed:

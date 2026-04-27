@@ -1,10 +1,4 @@
+```
 __pycache__/
 *.pyc
-*.pyo
-*.log
-build/
-dist/
-*.spec
-.cover_debug.txt
-downloads/
-
+```
