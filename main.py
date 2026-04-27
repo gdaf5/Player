@@ -1,11 +1,13 @@
-﻿import sys
+import sys
 import os
 import json
 import glob
 import random
 import subprocess
 import threading
+import math
 from pathlib import Path
+from datetime import datetime
 
 
 def get_app_dir():
@@ -25,13 +27,19 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QLabel, QSlider,
     QFileDialog, QInputDialog, QMessageBox, QFrame, QSplitter,
     QComboBox, QMenu, QLineEdit, QProgressBar, QDialog, QGridLayout,
+    QGraphicsEffect, QGraphicsDropShadowEffect, QGraphicsBlurEffect,
+    QStackedWidget, QSizePolicy, QSpacerItem,
 )
 from PyQt6.QtCore import (
-    Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread, QRect,
+    Qt, QUrl, QTimer, QSize, QSettings, pyqtSignal, QThread, QRect, QPointF, QRectF, QLineF,
+    QPropertyAnimation, QEasingCurve, QPoint, QParallelAnimationGroup, QSequentialAnimationGroup,
+    QAbstractAnimation, pyqtProperty, QLineF,
 )
 from PyQt6.QtGui import (
     QFont, QColor, QPixmap, QPainter, QMovie, QPen, QBrush,
-    QLinearGradient, QRadialGradient, QPointF,
+    QLinearGradient, QRadialGradient, QConicalGradient,
+    QIcon, QPolygonF, QFontDatabase, QPalette, QCursor,
+    QTransform, QPainterPath, QGradient,
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaDevices
 from mutagen.easyid3 import EasyID3
@@ -101,6 +109,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#6c5ce740",
+        "glass": "#1e1e3a80",
     },
     "Ocean": {
         "bg_primary": "#0a192f",
@@ -123,6 +133,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#64ffda40",
+        "glass": "#1d346180",
     },
     "Sunset": {
         "bg_primary": "#1a0a1e",
@@ -145,6 +157,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#ff6b9d40",
+        "glass": "#3d1f4580",
     },
     "Forest": {
         "bg_primary": "#0a1a0f",
@@ -167,6 +181,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#4ade8040",
+        "glass": "#1e382280",
     },
     "Light": {
         "bg_primary": "#ffffff",
@@ -189,6 +205,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#6c5ce740",
+        "glass": "#e8e8ed80",
     },
     "Cyberpunk": {
         "bg_primary": "#0a0a12",
@@ -211,6 +229,8 @@ THEMES = {
         "success": "#00ff88",
         "danger": "#ff0044",
         "warning": "#ffaa00",
+        "glow": "#00ffff40",
+        "glass": "#1a1a2e80",
     },
     "Rose Gold": {
         "bg_primary": "#1a1015",
@@ -233,6 +253,8 @@ THEMES = {
         "success": "#00b894",
         "danger": "#e74c3c",
         "warning": "#f39c12",
+        "glow": "#f4a7bb40",
+        "glass": "#30203080",
     },
     "Nord": {
         "bg_primary": "#2e3440",
@@ -255,6 +277,8 @@ THEMES = {
         "success": "#a3be8c",
         "danger": "#bf616a",
         "warning": "#ebcb8b",
+        "glow": "#88c0d040",
+        "glass": "#434c5e80",
     },
     "Cherry Blossom": {
         "bg_primary": "#1a0f14",
@@ -277,6 +301,8 @@ THEMES = {
         "success": "#98fb98",
         "danger": "#ff6b6b",
         "warning": "#ffd700",
+        "glow": "#ffb7c540",
+        "glass": "#301e2c80",
     },
     "Deep Purple": {
         "bg_primary": "#0d0618",
@@ -299,6 +325,8 @@ THEMES = {
         "success": "#69f0ae",
         "danger": "#ff5252",
         "warning": "#ffd740",
+        "glow": "#b388ff40",
+        "glass": "#1f123880",
     },
     "Emerald": {
         "bg_primary": "#061410",
@@ -321,6 +349,8 @@ THEMES = {
         "success": "#34d399",
         "danger": "#ef4444",
         "warning": "#fbbf24",
+        "glow": "#34d39940",
+        "glass": "#0e2e2280",
     },
     "Amber": {
         "bg_primary": "#1a1408",
@@ -343,6 +373,8 @@ THEMES = {
         "success": "#22c55e",
         "danger": "#ef4444",
         "warning": "#fbbf24",
+        "glow": "#fbbf2440",
+        "glass": "#38301480",
     },
     "Crimson": {
         "bg_primary": "#180808",
@@ -365,6 +397,8 @@ THEMES = {
         "success": "#22c55e",
         "danger": "#ef4444",
         "warning": "#fbbf24",
+        "glow": "#ef444440",
+        "glass": "#38141480",
     },
     "Aqua": {
         "bg_primary": "#061218",
@@ -387,6 +421,8 @@ THEMES = {
         "success": "#22c55e",
         "danger": "#ef4444",
         "warning": "#fbbf24",
+        "glow": "#22d3ee40",
+        "glass": "#0e2a3880",
     },
     "Spider": {
         "bg_primary": "#080808",
@@ -409,6 +445,34 @@ THEMES = {
         "success": "#22c55e",
         "danger": "#cc0000",
         "warning": "#ff8800",
+        "glow": "#cc000040",
+        "glass": "#1a1a1a80",
+        "cursor": "spider",
+    },
+    "Windows XP": {
+        "bg_primary": "#245DDA",
+        "bg_secondary": "#3D7FE8",
+        "bg_tertiary": "#5C94F0",
+        "bg_hover": "#6BA0F5",
+        "bg_active": "#7EAEF8",
+        "text_primary": "#FFFFFF",
+        "text_secondary": "#E0E8FF",
+        "text_muted": "#B8C8E8",
+        "accent": "#FFD700",
+        "accent_hover": "#FFE44D",
+        "border": "#1E4A9E",
+        "progress_bg": "#1E4A9E",
+        "progress_fill": "#FFFFFF",
+        "scrollbar": "#3D7FE8",
+        "scrollbar_hover": "#6BA0F5",
+        "gradient_start": "#245DDA",
+        "gradient_end": "#5C94F0",
+        "success": "#78C850",
+        "danger": "#F06060",
+        "warning": "#F8B850",
+        "glow": "#FFD70040",
+        "glass": "#3D7FE880",
+        "cursor": "xp_classic",
     },
 }
 
@@ -1152,80 +1216,230 @@ class RainVisualizerWidget(QWidget):
 
 
 class RetroVisualizerWidget(QWidget):
-    """Retro-style audio visualizer widget with 64 frequency bars"""
+    """Advanced retro-style audio visualizer with CRT effects, glow, and perspective"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
-        self.setMinimumHeight(80)
-        self.setMaximumHeight(120)
+        self.setMinimumHeight(180)
+        self.setMaximumHeight(280)
         self.setStyleSheet("background-color: transparent;")
-    
+        
+        # Animation parameters
+        self.scanline_offset = 0
+        self.crt_flicker = 0
+        self.glow_intensity = 0.8
+        
     def paintEvent(self, event):
-        """Paint the retro visualizer with animated bars and grid"""
+        """Paint the advanced retro visualizer with CRT effects"""
         if not self.parent_window or not hasattr(self.parent_window, 'retro_bars'):
             return
         
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         
         # Get theme colors
         theme = self.parent_window.theme
         accent_color = QColor(theme['accent'])
-        bg_color = QColor(theme['bg_secondary'])
-        grid_color = QColor(theme['border'])
         
-        # Set background
-        painter.fillRect(self.rect(), bg_color)
+        # Create deep gradient background (Synthwave style)
+        bg_gradient = QLinearGradient(0, 0, 0, self.height())
+        dark_bg = QColor("#0a0a12")
+        mid_bg = QColor("#1a1a2e")
+        bottom_bg = QColor("#16213e")
         
-        # Draw retro grid (dotted lines)
-        pen = QPen(grid_color, 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
+        bg_gradient.setColorAt(0, dark_bg)
+        bg_gradient.setColorAt(0.5, mid_bg)
+        bg_gradient.setColorAt(1, bottom_bg)
+        painter.fillRect(self.rect(), QBrush(bg_gradient))
         
-        # Horizontal grid lines
-        num_h_lines = 5
-        height = self.height()
-        for i in range(num_h_lines + 1):
-            y = int(height / num_h_lines * i)
-            painter.drawLine(0, y, self.width(), y)
+        # Draw perspective grid (moving towards horizon)
+        self.draw_perspective_grid(painter, accent_color)
         
-        # Vertical grid lines
-        num_v_lines = 16
-        width = self.width()
-        for i in range(num_v_lines + 1):
-            x = int(width / num_v_lines * i)
-            painter.drawLine(x, 0, x, height)
+        # Draw 64 frequency bars with glow and perspective
+        self.draw_frequency_bars(painter, accent_color)
         
-        # Draw 64 frequency bars
-        bars = self.parent_window.retro_bars
-        num_bars = len(bars)
-        bar_width = max(3, (width - 20) / num_bars - 1)
-        spacing = (width - 20 - bar_width * num_bars) / (num_bars - 1) if num_bars > 1 else 0
+        # Draw CRT scanlines
+        self.draw_scanlines(painter)
         
-        max_bar_height = height - 20
+        # Draw CRT screen curvature vignette
+        self.draw_vignette(painter)
         
-        for i in range(num_bars):
-            # Calculate bar position
-            x = int(10 + i * (bar_width + spacing))
-            
-            # Calculate bar height based on value
-            bar_height = int(bars[i] * max_bar_height)
-            y = height - 10 - bar_height
-            
-            # Create gradient-like effect with transparency
-            bar_color = QColor(accent_color)
-            alpha = int(150 + 105 * bars[i])  # Dynamic transparency based on height
-            bar_color.setAlpha(alpha)
-            
-            # Draw rounded rectangle bar
-            bar_rect = QRect(x, y, int(bar_width), bar_height)
-            painter.setBrush(QBrush(bar_color))
-            painter.setPen(Qt.PenStyle.NoPen)
-            
-            # Draw bar with rounded top
-            painter.drawRoundedRect(bar_rect, 3, 3)
+        # Draw subtle CRT flicker
+        self.draw_flicker(painter)
         
         painter.end()
+        
+        # Update animation parameters
+        self.scanline_offset = (self.scanline_offset + 2) % 4
+        self.crt_flicker = random.uniform(0.95, 1.0)
+    
+    def draw_perspective_grid(self, painter, accent_color):
+        """Draw moving perspective grid lines"""
+        grid_color = QColor(accent_color)
+        grid_color.setAlpha(int(60 * self.crt_flicker))
+        
+        pen = QPen(grid_color, 1, Qt.PenStyle.SolidLine)
+        painter.setPen(pen)
+        
+        width = self.width()
+        height = self.height()
+        horizon_y = int(height * 0.3)
+        
+        # Horizontal perspective lines (closer at bottom, closer together at top)
+        num_lines = 12
+        for i in range(num_lines):
+            # Non-linear spacing for perspective effect
+            t = (i / num_lines) ** 2
+            y = int(horizon_y + t * (height - horizon_y))
+            
+            # Fade out lines near horizon
+            alpha = int(60 * t * self.crt_flicker)
+            line_color = QColor(accent_color)
+            line_color.setAlpha(alpha)
+            painter.setPen(QPen(line_color, 1))
+            
+            painter.drawLine(0, y, width, y)
+        
+        # Vertical perspective lines (converging at horizon center)
+        num_v_lines = 24
+        center_x = width / 2
+        for i in range(num_v_lines + 1):
+            x_bottom = int(i * width / num_v_lines)
+            # Lines converge toward center at horizon
+            x_top = int(center_x + (x_bottom - center_x) * 0.3)
+            
+            alpha = int(40 * self.crt_flicker)
+            line_color = QColor(accent_color)
+            line_color.setAlpha(alpha)
+            painter.setPen(QPen(line_color, 1))
+            
+            painter.drawLine(x_top, horizon_y, x_bottom, height)
+    
+    def draw_frequency_bars(self, painter, accent_color):
+        """Draw animated frequency bars with glow and rounded tops"""
+        bars = self.parent_window.retro_bars
+        num_bars = len(bars)
+        
+        width = self.width()
+        height = self.height()
+        horizon_y = int(height * 0.3)
+        available_height = height - horizon_y - 10
+        
+        # Calculate bar dimensions with slight perspective
+        base_bar_width = max(4, (width - 40) / num_bars - 2)
+        spacing = (width - 40 - base_bar_width * num_bars) / (num_bars - 1) if num_bars > 1 else 0
+        
+        max_bar_height = available_height * 0.85
+        
+        # Create glow effect
+        glow_color = QColor(accent_color)
+        glow_color.setAlpha(int(100 * self.glow_intensity))
+        
+        for i in range(num_bars):
+            # Calculate position with perspective adjustment
+            normalized_pos = (i / num_bars) - 0.5
+            perspective_scale = 1.0 - abs(normalized_pos) * 0.3
+            
+            x_base = int(20 + i * (base_bar_width + spacing))
+            bar_width = int(base_bar_width * perspective_scale)
+            
+            # Bar height with dynamic response
+            bar_value = bars[i]
+            bar_height = int(bar_value * max_bar_height)
+            
+            # Position bar from "floor" upward
+            y_bottom = height - 10
+            y_top = y_bottom - bar_height
+            
+            # Create gradient for each bar (brighter at top)
+            bar_gradient = QLinearGradient(x_base, y_top, x_base, y_bottom)
+            
+            # Top color (brightest)
+            top_brightness = min(255, int(200 + 55 * bar_value))
+            top_color = QColor(top_brightness, int(top_brightness * 0.3), int(top_brightness * 0.8))
+            top_color.setAlpha(int(220 * self.crt_flicker))
+            
+            # Bottom color (darker)
+            bottom_color = QColor(accent_color)
+            bottom_color.setAlpha(int(150 * self.crt_flicker))
+            
+            bar_gradient.setColorAt(0, top_color)
+            bar_gradient.setColorAt(1, bottom_color)
+            
+            # Draw glow behind bar
+            if bar_value > 0.3:
+                glow_rect = QRect(x_base - 2, int(y_top - 2), bar_width + 4, int(bar_height + 4))
+                glow_path = QPainterPath()
+                glow_path.addRoundedRect(glow_rect, 4, 4)
+                
+                glow_brush = QBrush(glow_color)
+                painter.setBrush(glow_brush)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawPath(glow_path)
+            
+            # Draw main bar with rounded top
+            bar_rect = QRect(x_base, int(y_top), bar_width, int(bar_height))
+            bar_path = QPainterPath()
+            bar_path.addRoundedRect(bar_rect, 4, 4)
+            
+            painter.setBrush(QBrush(bar_gradient))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPath(bar_path)
+            
+            # Draw highlight on top of bar
+            if bar_value > 0.5:
+                highlight_color = QColor(255, 255, 255)
+                highlight_color.setAlpha(int(100 * bar_value * self.crt_flicker))
+                highlight_rect = QRect(x_base + 2, int(y_top + 2), bar_width - 4, 3)
+                painter.setBrush(QBrush(highlight_color))
+                painter.drawRoundedRect(highlight_rect, 2, 2)
+    
+    def draw_scanlines(self, painter):
+        """Draw CRT scanline effect"""
+        width = self.width()
+        height = self.height()
+        
+        scanline_color = QColor(0, 0, 0)
+        scanline_color.setAlpha(30)
+        
+        painter.setBrush(QBrush(scanline_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        # Draw horizontal scanlines
+        line_height = 2
+        spacing = 4
+        for y in range(0, height, spacing):
+            actual_y = y + self.scanline_offset
+            if actual_y < height:
+                painter.drawRect(0, actual_y, width, line_height)
+    
+    def draw_vignette(self, painter):
+        """Draw CRT screen curvature vignette effect"""
+        width = self.width()
+        height = self.height()
+        
+        # Create radial gradient for vignette
+        vignette_gradient = QRadialGradient(width / 2, height / 2, max(width, height) * 0.7)
+        
+        vignette_gradient.setColorAt(0, QColor(0, 0, 0, 0))
+        vignette_gradient.setColorAt(0.7, QColor(0, 0, 0, 20))
+        vignette_gradient.setColorAt(1, QColor(0, 0, 0, 80))
+        
+        painter.setBrush(QBrush(vignette_gradient))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(0, 0, width, height)
+    
+    def draw_flicker(self, painter):
+        """Draw subtle CRT flicker overlay"""
+        flicker_alpha = int((1.0 - self.crt_flicker) * 20)
+        if flicker_alpha > 0:
+            flicker_color = QColor(255, 255, 255)
+            flicker_color.setAlpha(flicker_alpha)
+            painter.setBrush(QBrush(flicker_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(0, 0, self.width(), self.height())
 
 
 def format_time(ms):
@@ -2084,6 +2298,66 @@ class MusicPlayer(QMainWindow):
                     border-radius: 8px;
                 }}
             """)
+        
+        # Apply custom cursor based on theme
+        self.apply_custom_cursor(t.get('cursor', None))
+    
+    def apply_custom_cursor(self, cursor_type):
+        """Apply custom cursor based on theme"""
+        if cursor_type == "xp_classic":
+            # Create a classic Windows XP-style arrow cursor using QPixmap
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw white arrow with black outline (classic Windows style)
+            arrow_path = QPainterPath()
+            arrow_path.moveTo(4, 2)
+            arrow_path.lineTo(4, 26)
+            arrow_path.lineTo(10, 20)
+            arrow_path.lineTo(16, 28)
+            arrow_path.lineTo(20, 24)
+            arrow_path.lineTo(14, 16)
+            arrow_path.lineTo(28, 16)
+            arrow_path.closeSubpath()
+            
+            # Black outline
+            painter.setPen(QPen(QColor(0, 0, 0), 2))
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            painter.drawPath(arrow_path)
+            painter.end()
+            
+            cursor = QCursor(pixmap, 4, 2)
+            self.setCursor(cursor)
+        elif cursor_type == "spider":
+            # Create a red/black spider-themed cursor
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw red arrow with black details
+            arrow_path = QPainterPath()
+            arrow_path.moveTo(4, 2)
+            arrow_path.lineTo(4, 26)
+            arrow_path.lineTo(10, 20)
+            arrow_path.lineTo(16, 28)
+            arrow_path.lineTo(20, 24)
+            arrow_path.lineTo(14, 16)
+            arrow_path.lineTo(28, 16)
+            arrow_path.closeSubpath()
+            
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.setBrush(QBrush(QColor(204, 0, 0)))  # Spider red
+            painter.drawPath(arrow_path)
+            painter.end()
+            
+            cursor = QCursor(pixmap, 4, 2)
+            self.setCursor(cursor)
+        else:
+            # Default system cursor
+            self.unsetCursor()
 
     def on_platform_changed(self):
         mode = self.platform_combo.currentText()
